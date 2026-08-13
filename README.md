@@ -97,9 +97,27 @@ await stripe.checkout.sessions.create({
 ```
 
 Without this, a payment cannot be traced back to a traffic source — you know
-money arrived and nothing about where it came from. Sessions missing it are
-counted and surfaced as a warning rather than dropped, so the breakage is
-visible the day it starts.
+money arrived and nothing about where it came from.
+
+Those orders are **not dropped**. Guest checkout has no authenticated user and
+so genuinely has no id to send, which is expected rather than broken; the
+dashboard keeps the money and shows it as a separate *Unattributed* line so
+that:
+
+```
+attributed + unattributed = collected in Stripe
+```
+
+always holds. A funnel that quietly reports less revenue than the account
+actually took is worse than one that reports none, so the total is always
+reconcilable against the Stripe dashboard.
+
+Two failure modes are distinguished, because they need different responses:
+
+| What the dashboard sees | Reading |
+| --- | --- |
+| Paid order, no `user_id` | Expected with guest checkout. If you don't offer it, checkout stopped setting the metadata. |
+| Paid order, `user_id` matches no person | A real fault — `identify()` and checkout are using different ids. |
 
 ### 5. Tell it about your own domain
 
@@ -192,5 +210,8 @@ public/              dashboard + settings page
   site total.
 - Stripe is optional. Without it, traffic and signups still work; the money
   columns stay empty and the dashboard says why.
+- Revenue on a source card is only what could be attributed. The summary and
+  the table both carry an *Unattributed* line whenever the two differ, so the
+  collected total always matches Stripe.
 - Results cache for the configured number of seconds; **Refresh** forces a
   re-read of both APIs.

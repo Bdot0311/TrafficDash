@@ -346,26 +346,94 @@ function fullTable(report) {
     ]),
   );
 
+  const rev = report.revenue;
+  const dash = () => el('td', { class: 'num', text: '—' });
+
+  // Unattributed money gets its own row rather than being left out, so the
+  // revenue column reconciles with Stripe instead of quietly falling short.
+  const unattributedRow =
+    rev.unattributed > 0
+      ? el('tr', { class: 'row-muted' }, [
+          el('td', { text: 'Unattributed (no source)' }),
+          ...report.stages.map(dash),
+          dash(),
+          el('td', {
+            class: 'num',
+            text: fmt.format(rev.noUserIdOrders + rev.orphanedOrders),
+          }),
+          el('td', { class: 'num', text: money(rev.unattributed, report.currency) }),
+          el('td', { text: '—' }),
+        ])
+      : null;
+
   const foot = el('tr', {}, [
-    el('td', { text: 'All sources' }),
+    // "Total", not "All sources" — the unattributed row above is not a source,
+    // and not "Collected in Stripe" either, since this row also totals traffic.
+    el('td', { text: 'Total' }),
     ...report.stages.map((stage) =>
       el('td', { class: 'num', text: fmt.format(report.totals[stage]) }),
     ),
     el('td', { class: 'num', text: fmt.format(report.sources.reduce((n, s) => n + s.scanRuns, 0)) }),
-    el('td', { class: 'num', text: fmt.format(report.sources.reduce((n, s) => n + s.orders, 0)) }),
-    el('td', { class: 'num', text: money(report.totalRevenue, report.currency) }),
+    el('td', {
+      class: 'num',
+      text: fmt.format(
+        report.sources.reduce((n, s) => n + s.orders, 0) +
+          rev.noUserIdOrders +
+          rev.orphanedOrders,
+      ),
+    }),
+    el('td', { class: 'num', text: money(rev.collected, report.currency) }),
     el('td', { text: '' }),
   ]);
 
   return el('table', {}, [
     el('thead', {}, [head]),
-    el('tbody', {}, body),
+    el('tbody', {}, [...body, unattributedRow].filter(Boolean)),
     el('tfoot', {}, [foot]),
   ]);
 }
 
 /* --- render ---------------------------------------------------------------- */
 let lastReport = null;
+
+/**
+ * Reconciliation line: attributed + unattributed = collected.
+ *
+ * Only rendered when something is unattributed. Its job is to let the number
+ * be checked against the Stripe dashboard — a funnel that quietly reports less
+ * revenue than was actually taken is worse than one that reports none.
+ */
+function renderReconciliation(report) {
+  const { attributed, unattributed, collected, noUserIdOrders, orphanedOrders } = report.revenue;
+  const node = $('#reconciliation');
+
+  if (unattributed <= 0) {
+    node.replaceChildren();
+    node.hidden = true;
+    return;
+  }
+
+  node.hidden = false;
+  const reasons = [
+    noUserIdOrders > 0 && `${fmt.format(noUserIdOrders)} without a user id`,
+    orphanedOrders > 0 && `${fmt.format(orphanedOrders)} with an unmatched user id`,
+  ].filter(Boolean);
+
+  node.replaceChildren(
+    el('div', { class: 'recon-row' }, [
+      el('span', { class: 'recon-label', text: 'Attributed to a source' }),
+      el('span', { class: 'recon-value', text: money(attributed, report.currency) }),
+    ]),
+    el('div', { class: 'recon-row' }, [
+      el('span', { class: 'recon-label', text: `Unattributed (${reasons.join(', ')})` }),
+      el('span', { class: 'recon-value', text: money(unattributed, report.currency) }),
+    ]),
+    el('div', { class: 'recon-row recon-total' }, [
+      el('span', { class: 'recon-label', text: 'Collected in Stripe' }),
+      el('span', { class: 'recon-value', text: money(collected, report.currency) }),
+    ]),
+  );
+}
 
 function renderWarnings(list) {
   $('#warnings').replaceChildren(
@@ -413,10 +481,17 @@ function render(report) {
   }
 
   $('#hero-figure').textContent = fmt.format(report.totals.visitors);
-  $('#hero-caption').textContent = `unique visitors · last ${report.windowDays} days · ${money(
-    report.totalRevenue,
-    report.currency,
-  )} collected`;
+
+  const rev = report.revenue;
+  // Say "attributed", not "collected", whenever they differ — the source cards
+  // only ever sum to the attributed figure.
+  $('#hero-caption').textContent =
+    `unique visitors · last ${report.windowDays} days · ` +
+    (rev.unattributed > 0
+      ? `${money(rev.attributed, report.currency)} attributed`
+      : `${money(rev.collected, report.currency)} collected`);
+
+  renderReconciliation(report);
 
   $('#overall-funnel').replaceChildren(...overallFunnel(report));
   $('#legend').replaceChildren(...legend(report));

@@ -63,8 +63,12 @@ export async function testStripe() {
  *
  * The join key is `metadata.user_id`, set at session creation to the same id
  * passed to posthog.identify(). Without it a payment cannot be traced to a
- * source — those are surfaced as `unjoinable` rather than dropped, so the day
- * the checkout code stops setting it, the number moves.
+ * source.
+ *
+ * Those orders keep their AMOUNT, not just a count. Guest checkout has no
+ * authenticated user and so legitimately has no id — dropping the money would
+ * silently understate revenue, reporting less than Stripe collected with
+ * nothing to reconcile against.
  */
 export async function fetchPayments() {
   const days = Number(readSettings().windowDays) || 30;
@@ -73,14 +77,18 @@ export async function fetchPayments() {
   const sessions = await paginate('/checkout/sessions', { 'created[gte]': since });
 
   const orders = [];
-  let unjoinable = 0;
+  const noUserId = { orders: 0, revenue: 0, currency: 'USD' };
 
   for (const s of sessions) {
     const userId = s.metadata?.user_id || s.client_reference_id || '';
     const paid = s.payment_status === 'paid' || s.payment_status === 'no_payment_required';
 
     if (!userId) {
-      if (paid) unjoinable += 1;
+      if (paid) {
+        noUserId.orders += 1;
+        noUserId.revenue += (s.amount_total || 0) / 100;
+        noUserId.currency = (s.currency || 'usd').toUpperCase();
+      }
       continue;
     }
 
@@ -96,5 +104,6 @@ export async function fetchPayments() {
     });
   }
 
-  return { orders, unjoinable };
+  noUserId.revenue = Math.round(noUserId.revenue * 100) / 100;
+  return { orders, noUserId };
 }
