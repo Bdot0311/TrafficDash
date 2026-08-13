@@ -39,10 +39,25 @@ for (const s of report.sources) {
 
 console.log('-'.repeat(102));
 console.log(
-  pad('ALL', 26) +
+  pad('ALL SOURCES', 26) +
     report.stages.map((st) => num(report.totals[st], 10)).join('') +
-    num(`$${report.totalRevenue.toFixed(2)}`, 11),
+    num(`$${report.revenue.attributed.toFixed(2)}`, 11),
 );
+
+// Attributed + unattributed must equal what Stripe took, or the funnel is
+// quietly reporting less revenue than the account actually made.
+if (report.revenue.unattributed > 0) {
+  console.log(
+    pad('UNATTRIBUTED', 26) +
+      ''.padStart(50) +
+      num(`$${report.revenue.unattributed.toFixed(2)}`, 11),
+  );
+  console.log(
+    pad('COLLECTED IN STRIPE', 26) +
+      ''.padStart(50) +
+      num(`$${report.revenue.collected.toFixed(2)}`, 11),
+  );
+}
 
 for (const w of report.warnings) console.log(`\n  [${w.level}] ${w.text}`);
 console.log();

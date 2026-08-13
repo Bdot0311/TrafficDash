@@ -44,7 +44,7 @@ test('sources are discovered from the data, not declared', () => {
       person({ first: { referringDomain: 'some-blog.example.net' } }),
       person({}), // no referrer, no utm
     ],
-    payments: { orders: [], unjoinable: 0 },
+    payments: { orders: [], noUserId: { orders: 0, revenue: 0, currency: 'USD' } },
   });
 
   assert.deepEqual(
@@ -60,7 +60,7 @@ test('sources are discovered from the data, not declared', () => {
 test('a source with no traffic never appears', () => {
   const report = buildReport({
     people: [person({ first: { referringDomain: 'reddit.com' } })],
-    payments: { orders: [], unjoinable: 0 },
+    payments: { orders: [], noUserId: { orders: 0, revenue: 0, currency: 'USD' } },
   });
   assert.equal(report.sources.length, 1);
   assert.equal(report.sources.find((s) => s.key === 'trustmrr'), undefined);
@@ -79,7 +79,7 @@ test('own-domain referrals are internal, never acquisition', () => {
     people: [
       person({ first: { referringDomain: 'example.com', referrer: 'https://example.com/playbooks' } }),
     ],
-    payments: { orders: [], unjoinable: 0 },
+    payments: { orders: [], noUserId: { orders: 0, revenue: 0, currency: 'USD' } },
   });
   // The card names the page doing the linking, not the domain.
   assert.equal(report.sources[0].via, 'playbooks');
@@ -101,7 +101,7 @@ test('color follows the source identity, never its rank', () => {
       people: domains.flatMap((d, i) =>
         Array.from({ length: counts[i] }, () => person({ first: { referringDomain: d } })),
       ),
-      payments: { orders: [], unjoinable: 0 },
+      payments: { orders: [], noUserId: { orders: 0, revenue: 0, currency: 'USD' } },
     });
 
   // Same three sources, opposite ranking. Every hue must stay put.
@@ -119,7 +119,7 @@ test('no two sources share a color, and hues are never cycled past eight', () =>
     people: Array.from({ length: 10 }, (_, i) =>
       person({ first: { referringDomain: `site-${i}.example.net` } }),
     ),
-    payments: { orders: [], unjoinable: 0 },
+    payments: { orders: [], noUserId: { orders: 0, revenue: 0, currency: 'USD' } },
   });
 
   const colored = report.sources.filter((s) => s.slot > 0).map((s) => s.slot);
@@ -143,7 +143,7 @@ test('Stripe revenue joins to a traffic source through metadata.user_id', () => 
       orders: [
         { id: 'cs_1', userId: 'user_42', paid: true, amount: 9, currency: 'USD', status: 'complete' },
       ],
-      unjoinable: 0,
+      noUserId: { orders: 0, revenue: 0, currency: 'USD' },
     },
   });
 
@@ -156,7 +156,8 @@ test('Stripe revenue joins to a traffic source through metadata.user_id', () => 
   assert.equal(email.confidence, 'high');
   // Nobody else is credited for it.
   assert.equal(report.sources.find((s) => s.key === 'reddit').revenue, 0);
-  assert.equal(report.totalRevenue, 9);
+  assert.equal(report.revenue.attributed, 9);
+  assert.equal(report.revenue.collected, 9);
 });
 
 test('rates are a share of that source’s own visitors', () => {
@@ -165,38 +166,78 @@ test('rates are a share of that source’s own visitors', () => {
       ...Array.from({ length: 4 }, () => person({ first: { referringDomain: 'reddit.com' }, activationRuns: 1 })),
       ...Array.from({ length: 14 }, () => person({ first: { referringDomain: 'reddit.com' } })),
     ],
-    payments: { orders: [], unjoinable: 0 },
+    payments: { orders: [], noUserId: { orders: 0, revenue: 0, currency: 'USD' } },
   });
   assert.equal(report.sources[0].counts.visitors, 18);
   assert.equal(report.sources[0].rates.scanners, 22); // 4 / 18
 });
 
-test('a paid order with no user_id is reported, not silently dropped', () => {
+test('guest-checkout revenue is counted, not dropped', () => {
+  // Two guest orders worth $200 alongside one attributed $9 order. The old
+  // shape kept only a count, so the $200 vanished from every total.
+  const buyer = person({ userId: 'u_1', distinctIds: ['u_1'], first: { utmSource: 'reddit' } });
   const report = buildReport({
-    people: [person({})],
-    payments: { orders: [], unjoinable: 2 },
+    people: [buyer],
+    payments: {
+      orders: [{ id: 'cs_1', userId: 'u_1', paid: true, amount: 9, currency: 'USD' }],
+      noUserId: { orders: 2, revenue: 200, currency: 'USD' },
+    },
   });
-  const warning = report.warnings.find((w) => w.level === 'serious');
-  assert.ok(warning, 'expected a serious warning for unjoinable orders');
-  assert.match(warning.text, /2 paid checkout sessions/);
+
+  assert.equal(report.revenue.attributed, 9);
+  assert.equal(report.revenue.unattributed, 200);
+  assert.equal(report.revenue.collected, 209, 'collected must match Stripe, not just the cards');
+  assert.equal(report.revenue.noUserIdOrders, 2);
+
+  // Stated as a fact about guest checkout, not as a broken join.
+  const warning = report.warnings.find((w) => /no metadata.user_id/.test(w.text));
+  assert.ok(warning);
+  assert.equal(warning.level, 'warning');
+  assert.match(warning.text, /\$200\.00/);
+  assert.match(warning.text, /guest checkout/i);
 });
 
-test('a paid order whose user_id matches no person is reported too', () => {
+test('attributed + unattributed always reconciles to collected', () => {
+  const buyer = person({ userId: 'u_1', distinctIds: ['u_1'], first: { utmSource: 'reddit' } });
+  const report = buildReport({
+    people: [buyer],
+    payments: {
+      orders: [
+        { id: 'cs_1', userId: 'u_1', paid: true, amount: 9, currency: 'USD' },
+        // carries an id, but no person matches it
+        { id: 'cs_2', userId: 'ghost', paid: true, amount: 41, currency: 'USD' },
+      ],
+      noUserId: { orders: 1, revenue: 50, currency: 'USD' },
+    },
+  });
+
+  const { attributed, unattributed, collected } = report.revenue;
+  assert.equal(attributed, 9);
+  assert.equal(unattributed, 91); // 41 orphaned + 50 guest
+  assert.equal(collected, 100);
+  assert.equal(attributed + unattributed, collected);
+});
+
+test('a paid order whose user_id matches no person is reported as a real fault', () => {
   const report = buildReport({
     people: [person({})],
     payments: {
       orders: [{ id: 'cs_x', userId: 'ghost', paid: true, amount: 20, currency: 'USD' }],
-      unjoinable: 0,
+      noUserId: { orders: 0, revenue: 0, currency: 'USD' },
     },
   });
-  assert.ok(report.warnings.some((w) => /no matching PostHog person/.test(w.text)));
+  // Unlike guest checkout, this one means identify() and checkout disagree.
+  assert.equal(report.warnings.find((w) => /no PostHog person/.test(w.text))?.level, 'serious');
+  // And its money still shows up in the collected total.
+  assert.equal(report.revenue.unattributed, 20);
+  assert.equal(report.revenue.collected, 20);
 });
 
 test('an unset activation event counts nobody rather than everybody', () => {
   writeSettings({ events: { activation: '', signup: '' } });
   const report = buildReport({
     people: [person({ activationRuns: 3 })],
-    payments: { orders: [], unjoinable: 0 },
+    payments: { orders: [], noUserId: { orders: 0, revenue: 0, currency: 'USD' } },
   });
   assert.ok(report.warnings.some((w) => /No activation event set/.test(w.text)));
   writeSettings({ events: { activation: 'scan_run', signup: 'signup' } });
