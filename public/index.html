@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TrafficDash</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="./styles.css" />
+    <script>
+      // Dark is this dashboard's default; a stored choice wins.
+      try {
+        const saved = localStorage.getItem('trafficdash-theme');
+        if (saved) document.documentElement.dataset.theme = saved;
+      } catch {}
+    </script>
+  </head>
+  <body>
+    <main class="page">
+      <header class="page-head">
+        <div>
+          <p class="eyebrow">Signup → payment funnel</p>
+          <h1>TrafficDash</h1>
+        </div>
+        <div class="page-head-actions">
+          <span class="mode-pill" id="mode-pill" hidden></span>
+          <button type="button" class="ghost-btn" id="refresh">Refresh</button>
+          <button type="button" class="ghost-btn" id="theme-toggle" aria-label="Toggle theme">
+            Theme
+          </button>
+          <a class="ghost-btn" href="/settings">Settings</a>
+        </div>
+      </header>
+
+      <div id="warnings" class="warnings"></div>
+
+      <!-- Shown until PostHog is connected. No data means no numbers, not fake ones. -->
+      <section class="empty-state panel" id="empty-state" hidden>
+        <h2>Nothing connected yet</h2>
+        <p>
+          TrafficDash reads your PostHog and Stripe accounts directly and joins them on
+          <code>user_id</code>. Every source card is built from your own traffic — nothing is
+          assumed or filled in.
+        </p>
+        <ol class="empty-steps">
+          <li>Add a PostHog personal API key and project ID.</li>
+          <li>Add a Stripe restricted key (<code>rk_live</code>, read-only).</li>
+          <li>
+            Make sure checkout sets <code>metadata.user_id</code> to the same id you pass to
+            <code>posthog.identify()</code>.
+          </li>
+        </ol>
+        <a class="primary-btn" href="/settings">Open settings</a>
+      </section>
+
+      <div id="dashboard" hidden>
+      <!-- Overall funnel: one number leads, one chart carries the shape. -->
+      <section class="summary panel" aria-labelledby="summary-title">
+        <div class="summary-hero">
+          <h2 id="summary-title" class="panel-title">Everyone, end to end</h2>
+          <p class="hero-figure" id="hero-figure">—</p>
+          <p class="hero-caption" id="hero-caption">unique visitors</p>
+        </div>
+        <figure class="summary-chart">
+          <figcaption class="sr-only">
+            Overall funnel from visitors to paid, across all traffic sources.
+          </figcaption>
+          <div class="funnel" id="overall-funnel"></div>
+        </figure>
+      </section>
+
+      <section aria-labelledby="sources-title">
+        <div class="section-head">
+          <h2 id="sources-title" class="section-title">
+            Where traffic comes from — and whether it acts
+          </h2>
+          <p class="section-meta" id="section-meta">
+            Visitors = first-touch · Paid = last non-direct touch · Open a card to see exact
+            UTMs · Microlaunch / Internal pulled out of Direct
+          </p>
+        </div>
+
+        <div class="legend" id="legend" role="list" aria-label="Funnel stages"></div>
+
+        <div class="cards" id="cards"></div>
+      </section>
+
+      <section class="panel table-panel" aria-labelledby="table-title">
+        <div class="panel-head">
+          <h2 id="table-title" class="panel-title">Table view</h2>
+          <button type="button" class="ghost-btn" id="table-toggle" aria-expanded="false">
+            Show
+          </button>
+        </div>
+        <div id="table-wrap" class="table-wrap" hidden></div>
+      </section>
+      </div>
+
+      <footer class="page-foot">
+        <span id="generated">—</span>
+      </footer>
+    </main>
+
+    <div id="tooltip" class="tooltip" role="tooltip" aria-hidden="true"></div>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

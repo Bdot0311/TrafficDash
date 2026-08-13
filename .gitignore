@@ -1,0 +1,7 @@
+node_modules/
+# Saved credentials live here. Never commit them.
+data/
+.env
+.env.local
+*.log
+.DS_Store

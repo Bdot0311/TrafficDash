@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Settings · TrafficDash</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="./styles.css" />
+    <script>
+      try {
+        const saved = localStorage.getItem('trafficdash-theme');
+        if (saved) document.documentElement.dataset.theme = saved;
+      } catch {}
+    </script>
+  </head>
+  <body>
+    <main class="page page-narrow">
+      <header class="page-head">
+        <div>
+          <p class="eyebrow"><a class="back-link" href="/">← Dashboard</a></p>
+          <h1>Settings</h1>
+        </div>
+        <button type="button" class="ghost-btn" id="theme-toggle">Theme</button>
+      </header>
+
+      <p class="lede">
+        Connect PostHog and Stripe. The dashboard reads both directly and joins them on
+        <code>user_id</code> — nothing is stored anywhere but this machine.
+      </p>
+
+      <form id="settings-form">
+        <!-- ---------------- PostHog ---------------- -->
+        <section class="panel form-section">
+          <div class="section-title-row">
+            <h2 class="panel-title">PostHog</h2>
+            <span class="status-chip" id="status-posthog" data-state="off">Not connected</span>
+          </div>
+          <p class="help">
+            Profile → <b>Personal API keys</b> → Create, with access to your project. The
+            Project ID is in project settings.
+          </p>
+
+          <label class="field">
+            <span class="field-label">Host</span>
+            <input name="posthog.host" type="url" placeholder="https://us.posthog.com" />
+            <span class="field-hint">Use https://eu.posthog.com if your project is in the EU.</span>
+          </label>
+
+          <label class="field">
+            <span class="field-label">Project ID</span>
+            <input name="posthog.projectId" inputmode="numeric" placeholder="12345" />
+          </label>
+
+          <label class="field">
+            <span class="field-label">Personal API key</span>
+            <input name="posthog.apiKey" type="password" autocomplete="off" placeholder="phx_…" />
+            <span class="field-hint" id="hint-posthog-key"></span>
+          </label>
+
+          <div class="test-row">
+            <button type="button" class="ghost-btn" data-test="posthog">Test connection</button>
+            <span class="test-result" id="result-posthog"></span>
+          </div>
+        </section>
+
+        <!-- ---------------- Stripe ---------------- -->
+        <section class="panel form-section">
+          <div class="section-title-row">
+            <h2 class="panel-title">Stripe</h2>
+            <span class="status-chip" id="status-stripe" data-state="off">Not connected</span>
+          </div>
+          <p class="help">
+            Developers → API keys → <b>Create restricted key</b>. Grant exactly Checkout
+            Sessions&nbsp;=&nbsp;Read, Events&nbsp;=&nbsp;Read, Charges&nbsp;=&nbsp;Read.
+            Everything else None.
+          </p>
+
+          <label class="field">
+            <span class="field-label">Restricted key</span>
+            <input name="stripe.apiKey" type="password" autocomplete="off" placeholder="rk_live_…" />
+            <span class="field-hint" id="hint-stripe-key">
+              Use <code>rk_live</code>, never <code>sk_live</code> — this dashboard only reads.
+            </span>
+          </label>
+
+          <div class="test-row">
+            <button type="button" class="ghost-btn" data-test="stripe">Test connection</button>
+            <span class="test-result" id="result-stripe"></span>
+          </div>
+
+          <div class="callout">
+            <b>One line makes the join work.</b> When you create a Checkout Session, set
+            <code>metadata.user_id</code> to the same id you pass to
+            <code>posthog.identify(userId, { email })</code>. Without it, a payment can't be
+            traced back to a traffic source.
+          </div>
+        </section>
+
+        <!-- ---------------- Your site ---------------- -->
+        <section class="panel form-section">
+          <h2 class="panel-title">Your site</h2>
+          <p class="help">
+            Referrals from these hostnames are Internal (Site Links), not acquisition — they
+            get pulled out of Direct so Direct's number means something.
+          </p>
+
+          <label class="field">
+            <span class="field-label">Site hosts</span>
+            <input name="siteHosts" placeholder="outreign.com, yourproject.lovable.app" />
+            <span class="field-hint">
+              Comma-separated. Subdomains are matched automatically, so
+              <code>outreign.com</code> also covers <code>www.outreign.com</code>. Include
+              any preview or staging domain you actually get traffic on — a Lovable
+              <code>*.lovable.app</code> URL counts as your site, not a referrer.
+            </span>
+          </label>
+        </section>
+
+        <!-- ---------------- Events ---------------- -->
+        <section class="panel form-section">
+          <h2 class="panel-title">Events</h2>
+          <p class="help">
+            Pick the events that mean "used it" and "signed up". The list loads from your
+            PostHog project once it's connected.
+          </p>
+
+          <label class="field">
+            <span class="field-label">Activation event <span class="field-tag">Scanners</span></span>
+            <input name="events.activation" list="event-names" placeholder="scan_run" />
+            <span class="field-hint">Whoever fired this at least once counts as a scanner.</span>
+          </label>
+
+          <label class="field">
+            <span class="field-label">Signup event <span class="field-tag">Signups</span></span>
+            <input name="events.signup" list="event-names" placeholder="signup" />
+            <span class="field-hint">
+              Anyone identified with an email also counts, even without this event.
+            </span>
+          </label>
+
+          <datalist id="event-names"></datalist>
+
+          <!-- Filled from your project: your own events, or a note if you have none. -->
+          <div id="event-picker"></div>
+        </section>
+
+        <!-- ---------------- Window ---------------- -->
+        <section class="panel form-section">
+          <h2 class="panel-title">Window</h2>
+
+          <div class="field-row">
+            <label class="field">
+              <span class="field-label">Days of history</span>
+              <input name="windowDays" type="number" min="1" max="365" />
+            </label>
+
+            <label class="field">
+              <span class="field-label">Cache (seconds)</span>
+              <input name="cacheSeconds" type="number" min="0" />
+              <span class="field-hint">How long before a reload re-hits both APIs.</span>
+            </label>
+          </div>
+        </section>
+
+        <div class="form-actions">
+          <button type="submit" class="primary-btn">Save</button>
+          <span class="test-result" id="save-result"></span>
+        </div>
+      </form>
+    </main>
+
+    <script type="module" src="./settings.js"></script>
+  </body>
+</html>

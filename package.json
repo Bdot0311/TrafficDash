@@ -1,0 +1,16 @@
+{
+  "name": "trafficdash",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Where traffic comes from - and whether it acts. Joins PostHog traffic/product events to Stripe payments on user_id.",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "demo": "TRAFFICDASH_DEMO=1 node server.js",
+    "report": "node scripts/report.js",
+    "test": "node --test test/*.test.js"
+  }
+}
