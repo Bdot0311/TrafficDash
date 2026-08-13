@@ -404,10 +404,19 @@ let lastReport = null;
  * revenue than was actually taken is worse than one that reports none.
  */
 function renderReconciliation(report) {
-  const { attributed, unattributed, collected, noUserIdOrders, orphanedOrders } = report.revenue;
+  const {
+    attributed,
+    unattributed,
+    collected,
+    noUserIdOrders,
+    orphanedOrders,
+    viaAnonymousId,
+    anonymousOrders,
+  } = report.revenue;
   const node = $('#reconciliation');
 
-  if (unattributed <= 0) {
+  // Nothing to reconcile and nothing recovered — the hero figure says it all.
+  if (unattributed <= 0 && viaAnonymousId <= 0) {
     node.replaceChildren();
     node.hidden = true;
     return;
@@ -415,23 +424,33 @@ function renderReconciliation(report) {
 
   node.hidden = false;
   const reasons = [
-    noUserIdOrders > 0 && `${fmt.format(noUserIdOrders)} without a user id`,
-    orphanedOrders > 0 && `${fmt.format(orphanedOrders)} with an unmatched user id`,
+    noUserIdOrders > 0 && `${fmt.format(noUserIdOrders)} with no id`,
+    orphanedOrders > 0 && `${fmt.format(orphanedOrders)} with an unmatched id`,
   ].filter(Boolean);
 
+  const row = (label, value, cls) =>
+    el('div', { class: cls ? `recon-row ${cls}` : 'recon-row' }, [
+      el('span', { class: 'recon-label', text: label }),
+      el('span', { class: 'recon-value', text: money(value, report.currency) }),
+    ]);
+
   node.replaceChildren(
-    el('div', { class: 'recon-row' }, [
-      el('span', { class: 'recon-label', text: 'Attributed to a source' }),
-      el('span', { class: 'recon-value', text: money(attributed, report.currency) }),
-    ]),
-    el('div', { class: 'recon-row' }, [
-      el('span', { class: 'recon-label', text: `Unattributed (${reasons.join(', ')})` }),
-      el('span', { class: 'recon-value', text: money(unattributed, report.currency) }),
-    ]),
-    el('div', { class: 'recon-row recon-total' }, [
-      el('span', { class: 'recon-label', text: 'Collected in Stripe' }),
-      el('span', { class: 'recon-value', text: money(collected, report.currency) }),
-    ]),
+    row('Attributed to a source', attributed),
+    // Indented, because it is a subset of the line above rather than an
+    // addition to it — the totals would not add up if read as a sibling.
+    ...(viaAnonymousId > 0
+      ? [
+          row(
+            `↳ guest checkout, matched by browser id (${fmt.format(anonymousOrders)})`,
+            viaAnonymousId,
+            'recon-sub',
+          ),
+        ]
+      : []),
+    ...(unattributed > 0
+      ? [row(`Unattributed (${reasons.join(', ')})`, unattributed)]
+      : []),
+    row('Collected in Stripe', collected, 'recon-total'),
   );
 }
 

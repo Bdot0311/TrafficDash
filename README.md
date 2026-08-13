@@ -96,7 +96,23 @@ await stripe.checkout.sessions.create({
 });
 ```
 
-Without this, a payment cannot be traced back to a traffic source — you know
+For **guest checkout** there is no authenticated user, so send the browser's
+PostHog id instead:
+
+```js
+metadata: {
+  user_id: user?.id,                              // authenticated buyers
+  posthog_distinct_id: posthog.get_distinct_id(),  // everyone, guests included
+}
+```
+
+Send both when you have both. TrafficDash tries `user_id` first and falls back
+to the distinct id, and `identify()` merges the anonymous id onto the person —
+so a guest who signs up later is still one person, not two, and their orders
+land on one card. Without the fallback, guest revenue can never reach a source
+card at all: there is nothing to join on.
+
+Without either, a payment cannot be traced back to a traffic source — you know
 money arrived and nothing about where it came from.
 
 Those orders are **not dropped**. Guest checkout has no authenticated user and
@@ -116,8 +132,12 @@ Two failure modes are distinguished, because they need different responses:
 
 | What the dashboard sees | Reading |
 | --- | --- |
-| Paid order, no `user_id` | Expected with guest checkout. If you don't offer it, checkout stopped setting the metadata. |
-| Paid order, `user_id` matches no person | A real fault — `identify()` and checkout are using different ids. |
+| Paid order, neither id | Fixable — checkout isn't sending `posthog_distinct_id`. |
+| Paid order, id matches no person | A real fault — `identify()` and checkout are using different ids. |
+
+Revenue that only joined because of the anonymous id is reported on its own
+line, so you can see what the fallback is actually recovering rather than
+assuming it works.
 
 ### 5. Tell it about your own domain
 
