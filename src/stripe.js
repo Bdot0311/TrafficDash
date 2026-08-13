@@ -61,15 +61,23 @@ export async function testStripe() {
 /**
  * Checkout Sessions in the window, reduced to what the join needs.
  *
- * The join key is `metadata.user_id`, set at session creation to the same id
- * passed to posthog.identify(). Without it a payment cannot be traced to a
- * source.
+ * Two join keys, tried in order:
  *
- * Those orders keep their AMOUNT, not just a count. Guest checkout has no
- * authenticated user and so legitimately has no id — dropping the money would
- * silently understate revenue, reporting less than Stripe collected with
- * nothing to reconcile against.
+ *   1. `metadata.user_id` — the authenticated user, set at session creation to
+ *      the same id passed to posthog.identify().
+ *   2. `metadata.posthog_distinct_id` — the browser's PostHog distinct_id.
+ *      Guest checkout has no authenticated user, so this is the only thing
+ *      tying the payment to the visit that produced it.
+ *
+ * Both resolve against the person's distinct_ids, because identify() merges
+ * the anonymous id onto the person — so a guest who later signs up still
+ * lands on one person rather than two.
+ *
+ * Orders carrying neither keep their AMOUNT, not just a count: dropping the
+ * money would understate revenue against Stripe with nothing to reconcile.
  */
+const ANON_KEYS = ['posthog_distinct_id', 'distinct_id', 'ph_distinct_id'];
+
 export async function fetchPayments() {
   const days = Number(readSettings().windowDays) || 30;
   const since = Math.floor(Date.now() / 1000) - days * 86400;
@@ -81,9 +89,11 @@ export async function fetchPayments() {
 
   for (const s of sessions) {
     const userId = s.metadata?.user_id || s.client_reference_id || '';
+    const anonId = ANON_KEYS.map((k) => s.metadata?.[k]).find(Boolean) || '';
+    const joinId = userId || anonId;
     const paid = s.payment_status === 'paid' || s.payment_status === 'no_payment_required';
 
-    if (!userId) {
+    if (!joinId) {
       if (paid) {
         noUserId.orders += 1;
         noUserId.revenue += (s.amount_total || 0) / 100;
@@ -94,7 +104,10 @@ export async function fetchPayments() {
 
     orders.push({
       id: s.id,
-      userId,
+      userId: joinId,
+      // Which key carried it — an authenticated match and a browser-scoped one
+      // are both real joins, but they are not equally strong evidence.
+      joinedVia: userId ? 'user_id' : 'distinct_id',
       email: s.customer_details?.email || s.customer_email || '',
       status: s.status,
       paid,

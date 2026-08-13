@@ -305,6 +305,13 @@ h1 {
   white-space: nowrap;
 }
 
+/* A subset of the line above, not an addition to it. */
+.recon-sub {
+  padding-left: 10px;
+  font-size: 11px;
+  opacity: 0.85;
+}
+
 .recon-total {
   color: var(--text-primary);
   font-weight: 500;

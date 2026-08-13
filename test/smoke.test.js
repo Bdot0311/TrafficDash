@@ -172,9 +172,10 @@ test('rates are a share of that source’s own visitors', () => {
   assert.equal(report.sources[0].rates.scanners, 22); // 4 / 18
 });
 
-test('guest-checkout revenue is counted, not dropped', () => {
-  // Two guest orders worth $200 alongside one attributed $9 order. The old
-  // shape kept only a count, so the $200 vanished from every total.
+test('unjoinable revenue is counted, not dropped', () => {
+  // Two orders worth $200 that carry no usable id at all, alongside one
+  // attributed $9 order. An earlier shape kept only a count, so the $200
+  // vanished from every total.
   const buyer = person({ userId: 'u_1', distinctIds: ['u_1'], first: { utmSource: 'reddit' } });
   const report = buildReport({
     people: [buyer],
@@ -189,12 +190,85 @@ test('guest-checkout revenue is counted, not dropped', () => {
   assert.equal(report.revenue.collected, 209, 'collected must match Stripe, not just the cards');
   assert.equal(report.revenue.noUserIdOrders, 2);
 
-  // Stated as a fact about guest checkout, not as a broken join.
-  const warning = report.warnings.find((w) => /no metadata.user_id/.test(w.text));
+  // Reported with the money attached, and never as a broken join.
+  const warning = report.warnings.find((w) => /neither a user_id/.test(w.text));
   assert.ok(warning);
   assert.equal(warning.level, 'warning');
   assert.match(warning.text, /\$200\.00/);
-  assert.match(warning.text, /guest checkout/i);
+});
+
+test('guest checkout attributes through the anonymous distinct_id', () => {
+  // A guest who never signs up: PostHog knows them only by the browser's
+  // anonymous distinct_id, which is also what checkout put in the metadata.
+  const guest = person({
+    distinctIds: ['anon_abc123'],
+    first: { referringDomain: 'reddit.com' },
+  });
+
+  const report = buildReport({
+    people: [guest],
+    payments: {
+      orders: [
+        {
+          id: 'cs_guest',
+          userId: 'anon_abc123',
+          joinedVia: 'distinct_id',
+          paid: true,
+          amount: 49,
+          currency: 'USD',
+        },
+      ],
+      noUserId: { orders: 0, revenue: 0, currency: 'USD' },
+    },
+  });
+
+  const reddit = report.sources.find((s) => s.key === 'reddit');
+  assert.equal(reddit.counts.paid, 1, 'guest revenue should reach the source card');
+  assert.equal(reddit.revenue, 49);
+  assert.equal(report.revenue.attributed, 49);
+  assert.equal(report.revenue.unattributed, 0);
+  // Recovered revenue is tracked separately so the fallback's value is visible.
+  assert.equal(report.revenue.viaAnonymousId, 49);
+  assert.equal(report.revenue.anonymousOrders, 1);
+});
+
+test('a guest who later signs up is one person, not two', () => {
+  // identify() merges the anonymous id onto the person, so PostHog returns
+  // both ids. An order keyed on either must land on the same card once.
+  const buyer = person({
+    distinctIds: ['anon_abc123', 'supabase-uuid-1'],
+    first: { referringDomain: 'reddit.com' },
+    signedUp: true,
+  });
+
+  const report = buildReport({
+    people: [buyer],
+    payments: {
+      orders: [
+        { id: 'cs_a', userId: 'anon_abc123', joinedVia: 'distinct_id', paid: true, amount: 10, currency: 'USD' },
+        { id: 'cs_b', userId: 'supabase-uuid-1', joinedVia: 'user_id', paid: true, amount: 15, currency: 'USD' },
+      ],
+      noUserId: { orders: 0, revenue: 0, currency: 'USD' },
+    },
+  });
+
+  const reddit = report.sources.find((s) => s.key === 'reddit');
+  assert.equal(reddit.counts.paid, 1, 'one person, counted once');
+  assert.equal(reddit.orders, 2, 'both orders still count');
+  assert.equal(reddit.revenue, 25);
+  assert.equal(report.revenue.viaAnonymousId, 10, 'only the anon-keyed order counts as recovered');
+  assert.equal(report.revenue.collected, 25);
+});
+
+test('an order carrying neither id says how to fix it', () => {
+  const report = buildReport({
+    people: [person({})],
+    payments: { orders: [], noUserId: { orders: 3, revenue: 75, currency: 'USD' } },
+  });
+  const warning = report.warnings.find((w) => /neither a user_id/.test(w.text));
+  assert.ok(warning);
+  assert.match(warning.text, /posthog_distinct_id/);
+  assert.equal(report.revenue.unattributed, 75);
 });
 
 test('attributed + unattributed always reconciles to collected', () => {
