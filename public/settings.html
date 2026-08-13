@@ -106,8 +106,13 @@
 
           <label class="field">
             <span class="field-label">Site hosts</span>
-            <input name="siteHosts" placeholder="outreign.com, www.outreign.com" />
-            <span class="field-hint">Comma-separated. Subdomains are matched automatically.</span>
+            <input name="siteHosts" placeholder="outreign.com, yourproject.lovable.app" />
+            <span class="field-hint">
+              Comma-separated. Subdomains are matched automatically, so
+              <code>outreign.com</code> also covers <code>www.outreign.com</code>. Include
+              any preview or staging domain you actually get traffic on — a Lovable
+              <code>*.lovable.app</code> URL counts as your site, not a referrer.
+            </span>
           </label>
         </section>
 
@@ -134,6 +139,9 @@
           </label>
 
           <datalist id="event-names"></datalist>
+
+          <!-- Filled from your project: your own events, or a note if you have none. -->
+          <div id="event-picker"></div>
         </section>
 
         <!-- ---------------- Window ---------------- -->

@@ -53,20 +53,40 @@ export async function testPostHog() {
   }
 }
 
-/** Distinct event names, so the settings page can offer real choices. */
+/**
+ * Distinct event names, split into your own events and PostHog's built-ins.
+ *
+ * The split is what makes the activation-event question answerable: `$pageview`
+ * and friends are autocaptured by the SDK and can never mean "they used the
+ * product". If `custom` comes back empty, nothing in the app is instrumented
+ * yet — no event name would work, and the settings page says so instead of
+ * offering a menu of built-ins.
+ */
 export async function listEventNames() {
   try {
     const rows = await hogql(`
-      SELECT event, count() AS n
+      SELECT event, count() AS n, uniq(person_id) AS people
       FROM events
       WHERE timestamp >= now() - INTERVAL 90 DAY
       GROUP BY event
       ORDER BY n DESC
       LIMIT 200
     `);
-    return rows.map((r) => ({ event: r.event, count: Number(r.n || 0) }));
+
+    const events = rows.map((r) => ({
+      event: r.event,
+      count: Number(r.n || 0),
+      people: Number(r.people || 0),
+      builtin: String(r.event || '').startsWith('$'),
+    }));
+
+    return {
+      events,
+      custom: events.filter((e) => !e.builtin),
+      builtin: events.filter((e) => e.builtin),
+    };
   } catch {
-    return [];
+    return { events: [], custom: [], builtin: [] };
   }
 }
 

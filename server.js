@@ -142,7 +142,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (url.pathname === '/api/events') {
-      return json(res, 200, { events: await listEventNames() });
+      return json(res, 200, await listEventNames());
     }
 
     return serveStatic(req, res);

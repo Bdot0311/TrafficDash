@@ -52,7 +52,8 @@ async function loadSettings() {
 }
 
 async function loadEventNames() {
-  const { events } = await (await fetch('/api/events')).json();
+  const { events, custom } = await (await fetch('/api/events')).json();
+
   $('#event-names').replaceChildren(
     ...events.map((e) => {
       const opt = document.createElement('option');
@@ -61,6 +62,48 @@ async function loadEventNames() {
       return opt;
     }),
   );
+
+  const picker = $('#event-picker');
+  picker.replaceChildren();
+
+  // Nothing custom means nothing to pick. Say that, rather than offering a
+  // menu of autocaptured built-ins that can't mean "they used it".
+  if (custom.length === 0) {
+    picker.append(
+      Object.assign(document.createElement('div'), {
+        className: 'callout',
+        innerHTML:
+          '<b>No product events found.</b> Your project only has PostHog’s autocaptured ' +
+          'events (<code>$pageview</code> and friends), which can’t tell you whether ' +
+          'someone used the product. Fire one from your app where the core action ' +
+          'completes — <code>posthog.capture(\'scan_run\')</code> — then come back and ' +
+          'pick it here.',
+      }),
+    );
+    return;
+  }
+
+  picker.append(
+    Object.assign(document.createElement('p'), {
+      className: 'help',
+      textContent: 'Your events, most frequent first — click one to use it:',
+    }),
+  );
+
+  const list = document.createElement('div');
+  list.className = 'event-chips';
+  for (const e of custom.slice(0, 14)) {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'event-chip';
+    chip.innerHTML = `<code>${e.event}</code> <span>${e.people.toLocaleString('en-US')} people</span>`;
+    chip.addEventListener('click', () => {
+      form.elements['events.activation'].value = e.event;
+      form.elements['events.activation'].focus();
+    });
+    list.append(chip);
+  }
+  picker.append(list);
 }
 
 function collect() {
