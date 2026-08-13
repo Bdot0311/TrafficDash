@@ -47,9 +47,32 @@ posthog.identify(userId, { email });
 ```
 
 This is the load-bearing line. `userId` is the join key — whatever it is, it has
-to be the same string you hand Stripe in step 3.
+to be the same string you hand Stripe in step 4.
 
-### 2. Stripe
+### 2. Instrument the action that means "they used it"
+
+The **Scanners** column counts people who did the thing your product exists to
+do. PostHog autocaptures pageviews and clicks on its own, but no autocaptured
+event can tell you that — you have to fire one:
+
+```js
+posthog.capture('scan_run');
+```
+
+Put it where the action **completes**, not where the button is clicked.
+Capturing on click counts intent, and intent is not activation — a scan that
+errors out halfway would still score as a success.
+
+The name is yours; `scan_run` is just an example. Whatever you pick, select it
+under **Events → Activation event** in Settings. That field lists your real
+event names, ranked by how many distinct people fired each, so you don't have to
+remember the exact string. If the list comes back empty, nothing in the app is
+instrumented yet and this step is the fix.
+
+> **On Lovable:** the default PostHog wiring only autocaptures. Expect an empty
+> list until you add a `capture()` call of your own.
+
+### 3. Stripe
 
 Developers → API keys → **Create restricted key**:
 
@@ -64,7 +87,7 @@ Use `rk_live`, not `sk_live`. A secret key can write; this dashboard only ever
 reads, so don't hand it the ability to do more. If you paste an `sk_` key the
 settings page will say so.
 
-### 3. Set the join key when you create Checkout
+### 4. Set the join key when you create Checkout
 
 ```js
 await stripe.checkout.sessions.create({
@@ -78,13 +101,13 @@ money arrived and nothing about where it came from. Sessions missing it are
 counted and surfaced as a warning rather than dropped, so the breakage is
 visible the day it starts.
 
-### 4. Tell it about your own domain
+### 5. Tell it about your own domain
 
 Add your hostnames under **Your site**. Referrals from them become *Internal
 (Site Links)* instead of counting as acquisition — which is what stops your own
 navigation from inflating Direct.
 
-### 5. Tag your links
+### 6. Tag your links
 
 When you post a link anywhere, add `?utm_source=…` if you can. Mobile clients
 strip referrers, so untagged traffic lands in **Direct (Untagged)** with no way
