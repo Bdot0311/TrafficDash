@@ -950,6 +950,24 @@ form {
   background: var(--status-good);
 }
 
+/* A key is on disk; nothing has proved it works yet. */
+.status-chip[data-state='saved'] {
+  color: var(--text-secondary);
+}
+
+.status-chip[data-state='saved']::before {
+  background: var(--text-secondary);
+}
+
+.status-chip[data-state='error'] {
+  color: var(--status-critical);
+  border-color: color-mix(in oklab, var(--status-critical) 45%, transparent);
+}
+
+.status-chip[data-state='error']::before {
+  background: var(--status-critical);
+}
+
 .callout {
   font-size: 12.5px;
   color: var(--text-secondary);
