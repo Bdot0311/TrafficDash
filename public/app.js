@@ -541,6 +541,7 @@ async function load({ force = false } = {}) {
     $('#dashboard').hidden = true;
     $('#empty-state').hidden = true;
     $('#mode-pill').hidden = true;
+    $('#generated').textContent = ''; // otherwise its placeholder dash floats alone
     $('#warnings').replaceChildren(
       el('div', { class: 'warning', 'data-level': 'critical' }, [
         el('span', { class: 'warning-icon', 'aria-hidden': 'true', text: '!' }),

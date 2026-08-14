@@ -6,16 +6,50 @@ const setValue = (name, value) => {
   if (input) input.value = value ?? '';
 };
 
-function setStatus(id, ok, label) {
+/**
+ * The chip reports what is actually known, which is not the same as whether a
+ * key is present.
+ *
+ *   off    — nothing stored
+ *   saved  — a key is stored, but nothing has proved it works
+ *   on     — a test round-tripped successfully
+ *   error  — a test came back refused
+ *
+ * Saying "Connected" merely because a string is on disk is how a dashboard
+ * ends up showing green next to a 403.
+ */
+// Last test verdict per target. Held as state rather than left in the DOM,
+// because loadSettings() repaints both chips — so a verdict written straight
+// to the element is wiped the next time the other panel reloads.
+const lastTest = { posthog: null, stripe: null };
+
+function setStatus(id, state, label) {
   const chip = $(id);
-  chip.dataset.state = ok ? 'on' : 'off';
+  chip.dataset.state = state;
   chip.textContent = label;
 }
 
-function showResult(id, { ok, error, detail, warn }) {
-  const node = $(id);
+function paintStatus(target, keyPresent) {
+  const verdict = lastTest[target];
+  if (verdict !== null) {
+    setStatus(`#status-${target}`, verdict ? 'on' : 'error', verdict ? 'Connected' : 'Not reachable');
+    return;
+  }
+  setStatus(
+    `#status-${target}`,
+    keyPresent ? 'saved' : 'off',
+    keyPresent ? 'Key saved' : 'Not configured',
+  );
+}
+
+function showResult(target, { ok, error, detail, warn }) {
+  const node = $(`#result-${target}`);
   node.dataset.state = ok ? (warn ? 'warn' : 'ok') : 'error';
   node.textContent = ok ? `✓ ${detail}` : `✗ ${error}`;
+
+  // A test result is the only real evidence either way — let it drive the chip.
+  lastTest[target] = Boolean(ok);
+  paintStatus(target, true);
 }
 
 async function loadSettings() {
@@ -44,8 +78,9 @@ async function loadSettings() {
     stripeHint.dataset.state = '';
   }
 
-  setStatus('#status-posthog', s.connected.posthog, s.connected.posthog ? 'Connected' : 'Not connected');
-  setStatus('#status-stripe', s.connected.stripe, s.connected.stripe ? 'Connected' : 'Not connected');
+  // Absent a test verdict, a stored key is all we know — claim no more.
+  paintStatus('posthog', s.connected.posthog);
+  paintStatus('stripe', s.connected.stripe);
 
   if (s.connected.posthog) loadEventNames();
   return s;
@@ -152,6 +187,10 @@ form.addEventListener('submit', async (event) => {
   form.elements['posthog.apiKey'].value = '';
   form.elements['stripe.apiKey'].value = '';
 
+  // Saving may have changed a key, so any earlier verdict no longer applies.
+  lastTest.posthog = null;
+  lastTest.stripe = null;
+
   await loadSettings();
   result.dataset.state = 'ok';
   result.textContent = '✓ Saved. The dashboard will re-read on next load.';
@@ -179,10 +218,12 @@ for (const button of document.querySelectorAll('[data-test]')) {
       })
     ).json();
 
-    showResult(`#result-${target}`, result);
     form.elements['posthog.apiKey'].value = '';
     form.elements['stripe.apiKey'].value = '';
+    // Reload first — it resets the chips to "Key saved", so the test result
+    // has to be applied after it or the outcome is immediately overwritten.
     await loadSettings();
+    showResult(target, result);
   });
 }
 

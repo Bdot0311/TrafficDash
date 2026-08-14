@@ -89,10 +89,13 @@
           </div>
 
           <div class="callout">
-            <b>One line makes the join work.</b> When you create a Checkout Session, set
+            <b>Two keys make the join work.</b> On every Checkout Session, set
             <code>metadata.user_id</code> to the same id you pass to
-            <code>posthog.identify(userId, { email })</code>. Without it, a payment can't be
-            traced back to a traffic source.
+            <code>posthog.identify()</code>, and
+            <code>metadata.posthog_distinct_id</code> to
+            <code>posthog.get_distinct_id()</code>. Send both when you have both — the
+            second is the only thing that can attribute a guest checkout, which by
+            definition has no user id.
           </div>
         </section>
 
