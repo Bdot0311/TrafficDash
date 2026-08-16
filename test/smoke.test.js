@@ -373,3 +373,30 @@ test('an app id is matched exactly, never as a domain suffix', () => {
   const spoof = classifyTouch({ referringDomain: 'evil-com.linkedin.android' });
   assert.notEqual(spoof.source.key, 'linkedin');
 });
+
+test('latest event timestamp is reported so liveness is separable from growth', () => {
+  const recent = new Date(Date.now() - 20 * 1000).toISOString();
+  const older = new Date(Date.now() - 3 * 86400 * 1000).toISOString();
+
+  const report = buildReport({
+    people: [
+      person({ first: { referringDomain: 'reddit.com' }, lastSeen: older }),
+      person({ first: { referringDomain: 'reddit.com' }, lastSeen: recent }),
+    ],
+    payments: { orders: [], noUserId: { orders: 0, revenue: 0, currency: 'USD' } },
+  });
+
+  // The newest event across everyone, not the newest person.
+  assert.equal(report.latestEventAt, recent);
+  // Traffic from someone already counted moves nothing in the hero, which is
+  // exactly why this second signal has to exist.
+  assert.equal(report.totals.visitors, 2);
+});
+
+test('latest event is null when there is nothing to report', () => {
+  const report = buildReport({
+    people: [],
+    payments: { orders: [], noUserId: { orders: 0, revenue: 0, currency: 'USD' } },
+  });
+  assert.equal(report.latestEventAt, null);
+});
