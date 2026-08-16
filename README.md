@@ -233,6 +233,10 @@ public/              dashboard + settings page
 - Revenue on a source card is only what could be attributed. The summary and
   the table both carry an *Unattributed* line whenever the two differ, so the
   collected total always matches Stripe.
+- The hero counts **unique visitors over the window**, so a returning visitor is
+  real traffic that moves nothing. The header's *Latest event* indicator is the
+  separate signal for "data is flowing" — the two can disagree, and when they do
+  the dashboard is right both times.
 - The header shows the age of the data, not of the last fetch — a cache hit
   returns the same timestamp, so it keeps counting up rather than resetting and
   implying the numbers are newer than they are.

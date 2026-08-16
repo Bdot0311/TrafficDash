@@ -201,6 +201,26 @@ h1 {
   color: var(--status-warning);
 }
 
+.live-dot::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-right: 5px;
+  vertical-align: 1px;
+  background: var(--status-good);
+}
+
+/* Nothing for an hour — real, but not "live". */
+.live-dot[data-quiet='true'] {
+  color: var(--text-muted);
+}
+
+.live-dot[data-quiet='true']::before {
+  background: var(--text-muted);
+}
+
 .ghost-btn[aria-pressed='true'] {
   color: var(--text-primary);
   border-color: color-mix(in oklab, var(--cat-1) 55%, transparent);

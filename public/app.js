@@ -591,6 +591,19 @@ function paintFreshness() {
   // implying the numbers are newer than they are.
   node.textContent = `Updated ${describeAge(age)}`;
   node.dataset.stale = age > 10 * 60 * 1000 ? 'true' : 'false';
+
+  // Separate signal, because the two can disagree: the numbers can be seconds
+  // old and still unchanged, since the hero counts unique people over the whole
+  // window. A returning visitor is real traffic that moves nothing.
+  const live = $('#latest-event');
+  if (!lastReport.latestEventAt) {
+    live.hidden = true;
+    return;
+  }
+  const eventAge = Date.now() - new Date(lastReport.latestEventAt).getTime();
+  live.hidden = false;
+  live.textContent = `Latest event ${describeAge(eventAge)}`;
+  live.dataset.quiet = eventAge > 60 * 60 * 1000 ? 'true' : 'false';
 }
 
 setInterval(paintFreshness, 5000);
