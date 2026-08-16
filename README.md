@@ -233,5 +233,9 @@ public/              dashboard + settings page
 - Revenue on a source card is only what could be attributed. The summary and
   the table both carry an *Unattributed* line whenever the two differ, so the
   collected total always matches Stripe.
-- Results cache for the configured number of seconds; **Refresh** forces a
-  re-read of both APIs.
+- The header shows the age of the data, not of the last fetch — a cache hit
+  returns the same timestamp, so it keeps counting up rather than resetting and
+  implying the numbers are newer than they are.
+- The page re-reads every 30s (toggle with **Auto**), but the cache window in
+  Settings is what actually sets freshness — polling harder only re-serves the
+  same cached report. **Refresh** bypasses the cache and re-hits both APIs.
