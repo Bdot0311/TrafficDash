@@ -74,7 +74,12 @@ export async function getReport({ force = false } = {}) {
 }
 
 function json(res, status, body) {
-  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
+  res.writeHead(status, {
+    'Content-Type': 'application/json; charset=utf-8',
+    // Without this the browser may serve a repeated ?refresh=1 from its own
+    // HTTP cache, so the second click onward never reaches the server.
+    'Cache-Control': 'no-store',
+  });
   res.end(JSON.stringify(body));
 }
 

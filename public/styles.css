@@ -189,6 +189,28 @@ h1 {
   background: var(--surface-2);
 }
 
+.freshness {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Old enough that it should not be read as current. */
+.freshness[data-stale='true'] {
+  color: var(--status-warning);
+}
+
+.ghost-btn[aria-pressed='true'] {
+  color: var(--text-primary);
+  border-color: color-mix(in oklab, var(--cat-1) 55%, transparent);
+}
+
+.ghost-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 .mode-pill {
   font-size: 10px;
   letter-spacing: 0.07em;

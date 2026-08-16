@@ -46,7 +46,10 @@ const DEFAULTS = {
     signup: process.env.POSTHOG_SIGNUP_EVENT || '',
   },
   windowDays: Number(process.env.WINDOW_DAYS || 30),
-  cacheSeconds: Number(process.env.CACHE_SECONDS || 300),
+  // Caps how stale the numbers can be. Five minutes made a live dashboard feel
+  // broken; one minute is the shortest interval that still keeps API traffic
+  // to roughly one read per minute per source.
+  cacheSeconds: Number(process.env.CACHE_SECONDS || 60),
   // Off by default: the dashboard shows your data or nothing at all.
   sampleData: false,
   // Optional display overrides, keyed by discovered source key.

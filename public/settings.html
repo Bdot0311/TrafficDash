@@ -160,7 +160,11 @@
             <label class="field">
               <span class="field-label">Cache (seconds)</span>
               <input name="cacheSeconds" type="number" min="0" />
-              <span class="field-hint">How long before a reload re-hits both APIs.</span>
+              <span class="field-hint">
+                The most stale the numbers can get. The dashboard re-reads every 30s, but
+                serves this cache in between — so this, not the polling, is what sets
+                freshness. Lower it for a livelier dashboard and more API calls.
+              </span>
             </label>
           </div>
         </section>

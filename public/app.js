@@ -517,6 +517,8 @@ function render(report) {
   $('#cards').replaceChildren(...report.sources.map((s) => sourceCard(s, report)));
   $('#table-wrap').replaceChildren(fullTable(report));
 
+  paintFreshness();
+
   $('#section-meta').textContent = [
     'Visitors = first-touch',
     'Paid = last non-direct touch',
@@ -560,7 +562,78 @@ async function load({ force = false } = {}) {
 }
 
 /* --- controls -------------------------------------------------------------- */
-$('#refresh').addEventListener('click', () => load({ force: true }));
+/* --- freshness & auto-refresh ---------------------------------------------
+   "Refresh" fired an async fetch that changed nothing on screen until it
+   finished, and the only timestamp was in the footer — so a working button
+   was indistinguishable from a broken one. Both problems are visibility.
+--------------------------------------------------------------------------- */
+
+function describeAge(ms) {
+  const seconds = Math.max(0, Math.round(ms / 1000));
+  if (seconds < 10) return 'just now';
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  return `${hours}h ago`;
+}
+
+function paintFreshness() {
+  const node = $('#freshness');
+  if (!lastReport?.generatedAt || lastReport.state === 'unconfigured') {
+    node.hidden = true;
+    return;
+  }
+  const age = Date.now() - new Date(lastReport.generatedAt).getTime();
+  node.hidden = false;
+  // Age of the DATA, not of the last fetch: a cache hit returns the same
+  // generatedAt, so this keeps counting up rather than resetting to zero and
+  // implying the numbers are newer than they are.
+  node.textContent = `Updated ${describeAge(age)}`;
+  node.dataset.stale = age > 10 * 60 * 1000 ? 'true' : 'false';
+}
+
+setInterval(paintFreshness, 5000);
+
+const refreshBtn = $('#refresh');
+
+async function manualRefresh() {
+  refreshBtn.disabled = true;
+  refreshBtn.textContent = 'Refreshing…';
+  try {
+    await load({ force: true });
+  } finally {
+    refreshBtn.disabled = false;
+    refreshBtn.textContent = 'Refresh';
+  }
+}
+
+refreshBtn.addEventListener('click', manualRefresh);
+
+// Polls unforced, so the server's own cache decides when to re-hit PostHog and
+// Stripe. Lower "Cache (seconds)" in Settings to make the data itself fresher;
+// polling harder than that would only re-read the same cached report.
+const AUTO_MS = 30000;
+let autoTimer = null;
+
+function setAuto(on) {
+  $('#auto-refresh').setAttribute('aria-pressed', String(on));
+  clearInterval(autoTimer);
+  autoTimer = on ? setInterval(() => load(), AUTO_MS) : null;
+  try {
+    localStorage.setItem('trafficdash-auto', on ? '1' : '0');
+  } catch {}
+}
+
+$('#auto-refresh').addEventListener('click', () => {
+  setAuto($('#auto-refresh').getAttribute('aria-pressed') !== 'true');
+});
+
+let autoOn = true;
+try {
+  autoOn = localStorage.getItem('trafficdash-auto') !== '0';
+} catch {}
+setAuto(autoOn);
 
 $('#theme-toggle').addEventListener('click', () => {
   const root = document.documentElement;

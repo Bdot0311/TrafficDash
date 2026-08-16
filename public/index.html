@@ -23,6 +23,18 @@
         </div>
         <div class="page-head-actions">
           <span class="mode-pill" id="mode-pill" hidden></span>
+          <!-- Data age, where it can actually be seen. The footer timestamp sits
+               below a page of cards and never gets read. -->
+          <span class="freshness" id="freshness" hidden></span>
+          <button
+            type="button"
+            class="ghost-btn"
+            id="auto-refresh"
+            aria-pressed="true"
+            title="Re-read every 30 seconds"
+          >
+            Auto
+          </button>
           <button type="button" class="ghost-btn" id="refresh">Refresh</button>
           <button type="button" class="ghost-btn" id="theme-toggle" aria-label="Toggle theme">
             Theme
