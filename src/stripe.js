@@ -39,20 +39,40 @@ async function paginate(pathname, params = {}, { max = 5000 } = {}) {
   return out;
 }
 
-/** Cheap round-trip used by the settings page's Test button. */
+/**
+ * Round-trip used by the settings page's Test button.
+ *
+ * Reports on a sample of recent sessions rather than only the newest one, and
+ * counts BOTH join keys. A guest checkout legitimately carries only
+ * posthog_distinct_id — judging it against user_id alone would call correct
+ * instrumentation broken, and one guest at the top of the list would decide
+ * the verdict for the whole account.
+ */
 export async function testStripe() {
   const key = readSettings().stripe.apiKey;
   if (!key) return { ok: false, error: 'A restricted key (rk_live_…) is required.' };
   try {
-    const page = await stripeGet('/checkout/sessions', { limit: 1 });
-    const withMeta = page.data.filter((s) => s.metadata?.user_id).length;
-    return {
-      ok: true,
-      detail: page.data.length
-        ? `Reached Checkout Sessions. Most recent session ${withMeta ? 'carries' : 'is missing'} metadata.user_id.`
-        : 'Reached Checkout Sessions. No sessions yet.',
-      warn: page.data.length > 0 && withMeta === 0,
-    };
+    const { data: sessions } = await stripeGet('/checkout/sessions', { limit: 10 });
+    if (!sessions.length) {
+      return { ok: true, detail: 'Reached Checkout Sessions. No sessions yet.' };
+    }
+
+    const identified = sessions.filter((s) => userIdOf(s)).length;
+    const guestOnly = sessions.filter((s) => !userIdOf(s) && anonIdOf(s)).length;
+    const joinable = identified + guestOnly;
+
+    const parts = [`Reached Checkout Sessions. ${joinable}/${sessions.length} recent sessions can be joined`];
+    if (joinable > 0) {
+      parts.push(
+        `(${identified} by user_id` +
+          (guestOnly ? `, ${guestOnly} by posthog_distinct_id` : '') +
+          ')',
+      );
+    } else {
+      parts.push('— none carry user_id or posthog_distinct_id');
+    }
+
+    return { ok: true, detail: parts.join(' '), warn: joinable < sessions.length };
   } catch (err) {
     return { ok: false, error: err.message };
   }
@@ -78,6 +98,11 @@ export async function testStripe() {
  */
 const ANON_KEYS = ['posthog_distinct_id', 'distinct_id', 'ph_distinct_id'];
 
+// Shared so the connection test and the real fetch can never disagree about
+// what counts as a usable join key.
+const userIdOf = (s) => s.metadata?.user_id || s.client_reference_id || '';
+const anonIdOf = (s) => ANON_KEYS.map((k) => s.metadata?.[k]).find(Boolean) || '';
+
 export async function fetchPayments() {
   const days = Number(readSettings().windowDays) || 30;
   const since = Math.floor(Date.now() / 1000) - days * 86400;
@@ -88,8 +113,8 @@ export async function fetchPayments() {
   const noUserId = { orders: 0, revenue: 0, currency: 'USD' };
 
   for (const s of sessions) {
-    const userId = s.metadata?.user_id || s.client_reference_id || '';
-    const anonId = ANON_KEYS.map((k) => s.metadata?.[k]).find(Boolean) || '';
+    const userId = userIdOf(s);
+    const anonId = anonIdOf(s);
     const joinId = userId || anonId;
     const paid = s.payment_status === 'paid' || s.payment_status === 'no_payment_required';
 
