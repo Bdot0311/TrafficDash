@@ -7,6 +7,7 @@ import path from 'node:path';
 import { writeSettings } from '../src/settings.js';
 import { buildReport } from '../src/report.js';
 import { classifyTouch, slotFor } from '../src/classify.js';
+import { buildPeopleQuery } from '../src/posthog.js';
 
 /**
  * These exercise the discovery + join logic against synthetic events. Nothing
@@ -315,4 +316,33 @@ test('an unset activation event counts nobody rather than everybody', () => {
   });
   assert.ok(report.warnings.some((w) => /No activation event set/.test(w.text)));
   writeSettings({ events: { activation: 'scan_run', signup: 'signup' } });
+});
+
+test('the generated HogQL never references properties outside a table scope', () => {
+  const sql = buildPeopleQuery({ days: 30, activation: 'scan_run', signup: 'signup' });
+
+  // A WITH clause is bound before the FROM scope exists, so any properties.*
+  // reference hoisted up there fails validation with "No scope or CTE
+  // available" — which is exactly how this query broke in production.
+  assert.ok(!/^\s*WITH\b/im.test(sql), 'query must not open with a WITH clause');
+
+  // Every properties.* reference has to sit inside the SELECT/WHERE of the
+  // query that owns the FROM.
+  const fromIndex = sql.indexOf('FROM events');
+  assert.ok(fromIndex > 0, 'expected a FROM events clause');
+  assert.ok(sql.indexOf('SELECT') < fromIndex, 'SELECT must precede FROM');
+
+  // No leftover aliases from the old WITH form.
+  assert.ok(!/\bref_domain\b/.test(sql), 'ref_domain alias should be inlined');
+  assert.ok(!/\bhas_ref\b/.test(sql), 'has_ref alias should be inlined');
+});
+
+test('an unset activation event never becomes a match-everything clause', () => {
+  const sql = buildPeopleQuery({ days: 30, activation: '', signup: '' });
+  assert.match(sql, /0\s+AS activation_runs/);
+  assert.match(sql, /0\s+AS signup_events/);
+
+  const withEvents = buildPeopleQuery({ days: 30, activation: "o'brien", signup: 'signup' });
+  // Event names are quoted, so an apostrophe cannot break out of the literal.
+  assert.match(withEvents, /countIf\(event = 'o\\'brien'\)/);
 });

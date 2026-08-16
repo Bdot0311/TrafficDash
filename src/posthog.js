@@ -18,7 +18,14 @@ async function hogql(query) {
 
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`PostHog ${res.status} ${res.statusText}: ${body.slice(0, 300)}`);
+    // PostHog returns a JSON envelope; surface the human-readable `detail`
+    // rather than dumping the whole blob (hogql_metadata included) on screen.
+    let message = body.slice(0, 300);
+    try {
+      const parsed = JSON.parse(body);
+      if (parsed.detail) message = String(parsed.detail).split('\n')[0];
+    } catch {}
+    throw new Error(`PostHog ${res.status}: ${message}`);
   }
 
   const json = await res.json();
@@ -34,19 +41,39 @@ async function hogql(query) {
 
 const sq = (v) => `'${String(v).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
 
-/** Cheap round-trip used by the settings page's Test button. */
+/**
+ * Round-trip used by the settings page's Test button.
+ *
+ * Deliberately runs the REAL people query (one day, one row) rather than a
+ * trivial probe, so "Connected" means the dashboard's own query is valid —
+ * not merely that the host answered.
+ */
 export async function testPostHog() {
-  const { host, projectId, apiKey } = readSettings().posthog;
+  const settings = readSettings();
+  const { host, projectId, apiKey } = settings.posthog;
   if (!host || !projectId || !apiKey) {
     return { ok: false, error: 'Host, Project ID and API key are all required.' };
   }
   try {
-    const rows = await hogql('SELECT count() AS events FROM events WHERE timestamp >= now() - INTERVAL 30 DAY');
-    const events = Number(rows[0]?.events || 0);
+    const [{ events = 0 } = {}] = await hogql(
+      'SELECT count() AS events FROM events WHERE timestamp >= now() - INTERVAL 30 DAY',
+    );
+
+    // Validates the query shape the dashboard depends on.
+    await hogql(
+      buildPeopleQuery({
+        days: 1,
+        activation: settings.events.activation,
+        signup: settings.events.signup,
+        limit: 1,
+      }),
+    );
+
+    const n = Number(events);
     return {
       ok: true,
-      detail: `${events.toLocaleString('en-US')} events in the last 30 days.`,
-      empty: events === 0,
+      detail: `${n.toLocaleString('en-US')} events in the last 30 days. Funnel query valid.`,
+      empty: n === 0,
     };
   } catch (err) {
     return { ok: false, error: err.message };
@@ -91,6 +118,62 @@ export async function listEventNames() {
 }
 
 /**
+ * The people query, built once and shared.
+ *
+ * The connection test runs this exact shape rather than a simpler probe: a
+ * `SELECT count()` proves the host and key work while saying nothing about
+ * whether the query the dashboard depends on is even valid. That gap is how a
+ * green "Connected" chip coexisted with a dashboard that could not load.
+ */
+export function buildPeopleQuery({ days, activation, signup, limit = 50000 }) {
+  // Only count an activation/signup event if one is actually configured —
+  // an unset name must never silently match everything.
+  const activationExpr = activation ? `countIf(event = ${sq(activation)})` : '0';
+  const signupExpr = signup ? `countIf(event = ${sq(signup)})` : '0';
+
+  // Inlined rather than hoisted into a WITH clause: HogQL binds WITH aliases
+  // before the FROM scope exists, so referencing properties.* up there fails
+  // with "No scope or CTE available".
+  // PostHog writes '$direct' (or an empty string) when there is no referrer.
+  const REF_DOMAIN = `if(empty(properties.$referring_domain) OR properties.$referring_domain = '$direct', '', properties.$referring_domain)`;
+  // Same test, stated directly — nesting REF_DOMAIN inside notEmpty() would
+  // repeat the whole expression three times per column for no benefit.
+  const HAS_REF = `(notEmpty(properties.$referring_domain) AND properties.$referring_domain != '$direct')`;
+
+  return `
+    SELECT
+      toString(person_id)                                   AS person_id,
+      arrayDistinct(groupArray(distinct_id))                AS distinct_ids,
+      min(timestamp)                                        AS first_seen,
+      max(timestamp)                                        AS last_seen,
+
+      argMin(properties.$current_url, timestamp)            AS first_url,
+      argMin(${REF_DOMAIN}, timestamp) AS first_referring_domain,
+      argMin(properties.$referrer, timestamp)               AS first_referrer,
+      argMin(properties.utm_source, timestamp)              AS first_utm_source,
+      argMin(properties.utm_medium, timestamp)              AS first_utm_medium,
+      argMin(properties.utm_campaign, timestamp)            AS first_utm_campaign,
+
+      argMaxIf(${REF_DOMAIN}, timestamp, ${HAS_REF}) AS last_referring_domain,
+      argMaxIf(properties.$current_url, timestamp, ${HAS_REF}) AS last_url,
+      argMaxIf(properties.utm_source, timestamp, ${HAS_REF}) AS last_utm_source,
+      argMaxIf(properties.utm_medium, timestamp, ${HAS_REF}) AS last_utm_medium,
+      argMaxIf(properties.utm_campaign, timestamp, ${HAS_REF}) AS last_utm_campaign,
+
+      uniq(properties.$session_id)                          AS sessions,
+      countIf(event = '$pageview')                          AS views,
+      ${activationExpr} AS activation_runs,
+      ${signupExpr} AS signup_events,
+      max(person.properties.email)                          AS email
+    FROM events
+    WHERE timestamp >= now() - INTERVAL ${Number(days)} DAY
+    GROUP BY person_id
+    ORDER BY first_seen ASC
+    LIMIT ${Number(limit)}
+  `;
+}
+
+/**
  * One row per person:
  *   - first-touch attribution inputs (earliest referrer / UTM / landing URL)
  *   - last non-direct touch inputs (what payment attribution uses)
@@ -99,52 +182,11 @@ export async function listEventNames() {
  */
 export async function fetchPeople() {
   const settings = readSettings();
-  const days = Number(settings.windowDays) || 30;
-  const activation = settings.events.activation;
-  const signup = settings.events.signup;
-
-  // Only count an activation/signup event if one is actually configured —
-  // an unset name must never silently match everything.
-  const activationExpr = activation ? `countIf(event = ${sq(activation)})` : '0';
-  const signupExpr = signup ? `countIf(event = ${sq(signup)})` : '0';
-
-  const query = `
-    WITH
-      if(
-        empty(properties.$referring_domain) OR properties.$referring_domain = '$direct',
-        '', properties.$referring_domain
-      ) AS ref_domain,
-      notEmpty(ref_domain) AS has_ref
-    SELECT
-      toString(person_id)                                   AS person_id,
-      arrayDistinct(groupArray(distinct_id))                AS distinct_ids,
-      min(timestamp)                                        AS first_seen,
-      max(timestamp)                                        AS last_seen,
-
-      argMin(properties.$current_url, timestamp)            AS first_url,
-      argMin(ref_domain, timestamp)                         AS first_referring_domain,
-      argMin(properties.$referrer, timestamp)               AS first_referrer,
-      argMin(properties.utm_source, timestamp)              AS first_utm_source,
-      argMin(properties.utm_medium, timestamp)              AS first_utm_medium,
-      argMin(properties.utm_campaign, timestamp)            AS first_utm_campaign,
-
-      argMaxIf(ref_domain, timestamp, has_ref)              AS last_referring_domain,
-      argMaxIf(properties.$current_url, timestamp, has_ref) AS last_url,
-      argMaxIf(properties.utm_source, timestamp, has_ref)   AS last_utm_source,
-      argMaxIf(properties.utm_medium, timestamp, has_ref)   AS last_utm_medium,
-      argMaxIf(properties.utm_campaign, timestamp, has_ref) AS last_utm_campaign,
-
-      uniq(properties.$session_id)                          AS sessions,
-      countIf(event = '$pageview')                          AS views,
-      ${activationExpr}                                     AS activation_runs,
-      ${signupExpr}                                         AS signup_events,
-      max(person.properties.email)                          AS email
-    FROM events
-    WHERE timestamp >= now() - INTERVAL ${days} DAY
-    GROUP BY person_id
-    ORDER BY first_seen ASC
-    LIMIT 50000
-  `;
+  const query = buildPeopleQuery({
+    days: Number(settings.windowDays) || 30,
+    activation: settings.events.activation,
+    signup: settings.events.signup,
+  });
 
   return (await hogql(query)).map((r) => ({
     personId: r.person_id,
