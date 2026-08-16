@@ -346,3 +346,30 @@ test('an unset activation event never becomes a match-everything clause', () => 
   // Event names are quoted, so an apostrophe cannot break out of the literal.
   assert.match(withEvents, /countIf\(event = 'o\\'brien'\)/);
 });
+
+test('mobile app referrers fold into the source they belong to', () => {
+  // Android reports the app package id instead of a hostname. Unmapped, these
+  // become their own cards and split one source across two rows.
+  assert.equal(classifyTouch({ referringDomain: 'com.linkedin.android' }).source.key, 'linkedin');
+  assert.equal(classifyTouch({ referringDomain: 'com.twitter.android' }).source.key, 'x');
+  assert.equal(classifyTouch({ referringDomain: 'com.reddit.frontpage' }).source.key, 'reddit');
+  assert.equal(classifyTouch({ referringDomain: 'com.google.android.gm' }).source.key, 'email');
+
+  // Web and app traffic land on one card, counted together.
+  const report = buildReport({
+    people: [
+      ...Array.from({ length: 24 }, () => person({ first: { referringDomain: 'linkedin.com' } })),
+      ...Array.from({ length: 9 }, () => person({ first: { referringDomain: 'com.linkedin.android' } })),
+    ],
+    payments: { orders: [], noUserId: { orders: 0, revenue: 0, currency: 'USD' } },
+  });
+  assert.equal(report.sources.length, 1, 'app and web traffic must not split');
+  assert.equal(report.sources[0].key, 'linkedin');
+  assert.equal(report.sources[0].counts.visitors, 33);
+});
+
+test('an app id is matched exactly, never as a domain suffix', () => {
+  // Suffix matching would let evil-com.linkedin.android impersonate LinkedIn.
+  const spoof = classifyTouch({ referringDomain: 'evil-com.linkedin.android' });
+  assert.notEqual(spoof.source.key, 'linkedin');
+});

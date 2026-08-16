@@ -11,10 +11,10 @@ import { readSettings } from './settings.js';
  * still gets a card; it just gets a derived name.
  */
 const REGISTRY = [
-  { key: 'reddit', label: 'Reddit', glyph: '◈', domains: ['reddit.com', 'redd.it'], utm: ['reddit'] },
-  { key: 'x', label: 'X / Twitter', glyph: '✕', domains: ['x.com', 'twitter.com', 't.co'], utm: ['x', 'twitter'] },
+  { key: 'reddit', label: 'Reddit', glyph: '◈', domains: ['reddit.com', 'redd.it'], apps: ['com.reddit.frontpage'], utm: ['reddit'] },
+  { key: 'x', label: 'X / Twitter', glyph: '✕', domains: ['x.com', 'twitter.com', 't.co'], apps: ['com.twitter.android'], utm: ['x', 'twitter'] },
   { key: 'hackernews', label: 'Hacker News', glyph: 'Y', domains: ['news.ycombinator.com'], utm: ['hn', 'hackernews'] },
-  { key: 'linkedin', label: 'LinkedIn', glyph: 'in', domains: ['linkedin.com', 'lnkd.in'], utm: ['linkedin'] },
+  { key: 'linkedin', label: 'LinkedIn', glyph: 'in', domains: ['linkedin.com', 'lnkd.in'], apps: ['com.linkedin.android'], utm: ['linkedin'] },
   { key: 'producthunt', label: 'Product Hunt', glyph: 'P', domains: ['producthunt.com'], utm: ['producthunt'] },
   { key: 'microlaunch', label: 'Microlaunch', glyph: '▲', domains: ['microlaunch.net'], utm: ['microlaunch'] },
   { key: 'trustmrr', label: 'TrustMRR', glyph: '★', domains: ['trustmrr.com'], utm: ['trustmrr'] },
@@ -23,13 +23,13 @@ const REGISTRY = [
   { key: 'duckduckgo', label: 'DuckDuckGo', glyph: 'D', domains: ['duckduckgo.com'], utm: ['duckduckgo'] },
   { key: 'github', label: 'GitHub', glyph: '⑂', domains: ['github.com'], utm: ['github'] },
   { key: 'youtube', label: 'YouTube', glyph: '▶', domains: ['youtube.com', 'youtu.be'], utm: ['youtube'] },
-  { key: 'discord', label: 'Discord', glyph: '◉', domains: ['discord.com', 'discord.gg'], utm: ['discord'] },
-  { key: 'slack', label: 'Slack', glyph: '#', domains: ['slack.com'], utm: ['slack'] },
-  { key: 'facebook', label: 'Facebook', glyph: 'f', domains: ['facebook.com', 'l.facebook.com'], utm: ['facebook', 'meta'] },
-  { key: 'instagram', label: 'Instagram', glyph: '◐', domains: ['instagram.com'], utm: ['instagram'] },
+  { key: 'discord', label: 'Discord', glyph: '◉', domains: ['discord.com', 'discord.gg'], apps: ['com.discord'], utm: ['discord'] },
+  { key: 'slack', label: 'Slack', glyph: '#', domains: ['slack.com'], apps: ['com.tinyspeck.chatlyio', 'com.slack'], utm: ['slack'] },
+  { key: 'facebook', label: 'Facebook', glyph: 'f', domains: ['facebook.com', 'l.facebook.com'], apps: ['com.facebook.katana', 'com.facebook.orca'], utm: ['facebook', 'meta'] },
+  { key: 'instagram', label: 'Instagram', glyph: '◐', domains: ['instagram.com'], apps: ['com.instagram.android'], utm: ['instagram'] },
   { key: 'resend', label: 'Email (Resend)', glyph: '✉', domains: ['resend.com'], utm: ['resend'] },
   { key: 'sequenzy', label: 'Email (Sequenzy)', glyph: '✉', domains: ['sequenzy.com'], utm: ['sequenzy'] },
-  { key: 'email', label: 'Email', glyph: '✉', domains: [], utm: ['email', 'newsletter', 'lifecycle'] },
+  { key: 'email', label: 'Email', glyph: '✉', domains: [], apps: ['com.google.android.gm', 'com.apple.mobilemail', 'com.microsoft.office.outlook'], utm: ['email', 'newsletter', 'lifecycle'] },
 ];
 
 // Residuals, not acquisition channels. Slot 0 = neutral chip, no source color.
@@ -68,9 +68,25 @@ function isOwnHost(domain) {
   });
 }
 
+/**
+ * Match a referring domain, including the app package ids that mobile apps
+ * report instead of a hostname.
+ *
+ * Android sends `com.linkedin.android` when someone taps a link inside the
+ * LinkedIn app. Left unmapped it becomes its own card, splitting one source
+ * across two rows and understating both — which is exactly the traffic most
+ * likely to be undercounted already, since apps also strip referrers.
+ *
+ * App ids are matched exactly: `com.linkedin.android` is a package name, not a
+ * domain, so suffix matching would be wrong.
+ */
 function lookupByDomain(domain) {
   const d = bareDomain(domain);
-  return REGISTRY.find((r) => r.domains.some((x) => d === x || d.endsWith('.' + x)));
+  return REGISTRY.find(
+    (r) =>
+      r.domains.some((x) => d === x || d.endsWith('.' + x)) ||
+      (r.apps || []).some((x) => d === x),
+  );
 }
 
 function lookupByUtm(utmSource, utmMedium, utmCampaign) {
