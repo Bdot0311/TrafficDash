@@ -152,6 +152,25 @@ strip referrers, so untagged traffic lands in **Direct (Untagged)** with no way
 to tell it apart from someone typing the URL. That's what the "Needs UTM" badge
 is telling you.
 
+## Reading it
+
+Two layers sit above the numbers, because a page of aggregates does not tell
+you what to do.
+
+**What this means** turns the aggregates into statements, each naming the
+figures it came from so it can be checked rather than believed: where the funnel
+actually breaks, which source converts best, which traffic is not plausibly
+human, how much revenue has no source. A source flagged as crawler traffic is
+excluded from the praise — recommending more of the traffic the same panel calls
+bots would be worse than saying nothing.
+
+**People** is one row per person: email if known, the source that found them,
+what they landed on, sessions, views, activations, whether they signed up, and
+what they paid. Buyers first, then signups, then whoever was here most recently.
+Filter by source, search by email or landing page, or narrow to signups and
+buyers only. This is where a number gets checked — an aggregate that looks wrong
+usually has three rows behind it that explain why.
+
 ## How attribution works
 
 Two attributions run at once, which is why the dashboard says so out loud:

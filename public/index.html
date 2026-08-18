@@ -67,6 +67,12 @@
       </section>
 
       <div id="dashboard" hidden>
+      <!-- Reading of the numbers, above the numbers. -->
+      <section class="panel findings-panel" id="findings-panel" hidden>
+        <h2 class="panel-title">What this means</h2>
+        <div class="findings" id="findings"></div>
+      </section>
+
       <!-- Overall funnel: one number leads, one chart carries the shape. -->
       <section class="summary panel" aria-labelledby="summary-title">
         <div class="summary-hero">
@@ -98,6 +104,30 @@
         <div class="legend" id="legend" role="list" aria-label="Funnel stages"></div>
 
         <div class="cards" id="cards"></div>
+      </section>
+
+      <section class="panel" id="people-panel" aria-labelledby="people-title">
+        <div class="panel-head">
+          <h2 id="people-title" class="panel-title">People <span id="people-count"></span></h2>
+          <div class="people-controls">
+            <input
+              type="search"
+              id="people-search"
+              class="people-input"
+              placeholder="Search email, source, page…"
+              aria-label="Search people"
+            />
+            <select id="people-source" class="people-input" aria-label="Filter by source"></select>
+            <button type="button" class="ghost-btn" id="people-signed" aria-pressed="false">
+              Signed up
+            </button>
+            <button type="button" class="ghost-btn" id="people-paid" aria-pressed="false">
+              Paid
+            </button>
+          </div>
+        </div>
+        <div id="people-wrap" class="table-wrap"></div>
+        <p class="people-note" id="people-note"></p>
       </section>
 
       <section class="panel table-panel" aria-labelledby="table-title">

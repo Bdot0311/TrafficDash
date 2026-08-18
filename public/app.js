@@ -393,6 +393,126 @@ function fullTable(report) {
   ]);
 }
 
+/* --- findings & people ------------------------------------------------------ */
+
+const FINDING_ICON = { critical: '!', warning: '!', good: '✓', info: 'i' };
+
+function renderFindings(findings) {
+  const panel = $('#findings-panel');
+  if (!findings?.length) {
+    panel.hidden = true;
+    return;
+  }
+  panel.hidden = false;
+  $('#findings').replaceChildren(
+    ...findings.map((f) =>
+      el('div', { class: 'finding', 'data-level': f.level }, [
+        // Icon plus level word: status never rides on color alone.
+        el('span', { class: 'finding-icon', 'aria-hidden': 'true', text: FINDING_ICON[f.level] }),
+        el('div', {}, [
+          el('p', { class: 'finding-title', text: f.title }),
+          el('p', { class: 'finding-detail', text: f.detail }),
+        ]),
+      ]),
+    ),
+  );
+}
+
+const shortDate = (iso) => {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+};
+
+const peopleFilters = { text: '', source: '', signed: false, paid: false };
+
+function filteredPeople() {
+  const rows = lastReport?.people || [];
+  const needle = peopleFilters.text.trim().toLowerCase();
+  return rows.filter((r) => {
+    if (peopleFilters.signed && !r.signedUp) return false;
+    if (peopleFilters.paid && !r.paid) return false;
+    if (peopleFilters.source && r.sourceKey !== peopleFilters.source) return false;
+    if (!needle) return true;
+    return [r.email, r.source, r.landing, r.utm].join(' ').toLowerCase().includes(needle);
+  });
+}
+
+function renderPeople() {
+  if (!lastReport) return;
+  const rows = filteredPeople();
+  const total = lastReport.peopleTotal || 0;
+
+  $('#people-count').textContent =
+    rows.length === total ? `· ${fmt.format(total)}` : `· ${fmt.format(rows.length)} of ${fmt.format(total)}`;
+
+  const head = el('tr', {}, [
+    el('th', { text: 'Person' }),
+    el('th', { text: 'Source' }),
+    el('th', { text: 'Landed on' }),
+    el('th', { text: 'First seen' }),
+    el('th', { text: 'Last seen' }),
+    el('th', { class: 'num', text: 'Sessions' }),
+    el('th', { class: 'num', text: 'Views' }),
+    el('th', { class: 'num', text: 'Scans' }),
+    el('th', { text: 'Signed up' }),
+    el('th', { class: 'num', text: 'Revenue' }),
+  ]);
+
+  const body = rows.slice(0, 250).map((r) =>
+    el('tr', {}, [
+      // Anonymous people are the norm, not an error — say so rather than
+      // showing a raw uuid that means nothing to a reader.
+      el('td', { class: r.email ? '' : 'muted', text: r.email || 'anonymous' }),
+      el('td', {}, [
+        el('span', { class: 'person-source', text: r.source }),
+        el('span', { class: 'person-conf', text: r.confidence }),
+      ]),
+      el('td', {}, [el('code', { class: 'chip-mono', text: r.landing })]),
+      el('td', { text: shortDate(r.firstSeen) }),
+      el('td', { text: shortDate(r.lastSeen) }),
+      el('td', { class: 'num', text: fmt.format(r.sessions) }),
+      el('td', { class: 'num', text: fmt.format(r.views) }),
+      el('td', { class: 'num', text: fmt.format(r.scanRuns) }),
+      el('td', { class: r.signedUp ? '' : 'muted', text: r.signedUp ? 'yes' : 'no' }),
+      el('td', {
+        class: r.revenue ? 'num' : 'num muted',
+        text: r.revenue ? money(r.revenue, lastReport.currency) : '—',
+      }),
+    ]),
+  );
+
+  $('#people-wrap').replaceChildren(
+    rows.length
+      ? el('table', {}, [el('thead', {}, [head]), el('tbody', {}, body)])
+      : el('p', { class: 'utm-empty', text: 'No one matches those filters.' }),
+  );
+
+  $('#people-note').textContent =
+    rows.length > 250
+      ? `Showing the first 250 of ${fmt.format(rows.length)} matches — narrow the filters to see the rest.`
+      : '';
+}
+
+function fillSourceFilter(report) {
+  const select = $('#people-source');
+  const current = select.value;
+  select.replaceChildren(
+    el('option', { value: '', text: 'All sources' }),
+    ...report.sources.map((s) =>
+      el('option', { value: s.key, text: `${s.label} (${fmt.format(s.counts.visitors)})` }),
+    ),
+  );
+  // Survive a re-render so an auto-refresh cannot silently reset the filter.
+  if (current && report.sources.some((s) => s.key === current)) select.value = current;
+}
+
 /* --- render ---------------------------------------------------------------- */
 let lastReport = null;
 
@@ -518,6 +638,9 @@ function render(report) {
   $('#table-wrap').replaceChildren(fullTable(report));
 
   paintFreshness();
+  renderFindings(report.findings);
+  fillSourceFilter(report);
+  renderPeople();
 
   $('#section-meta').textContent = [
     'Visitors = first-touch',
@@ -658,6 +781,27 @@ $('#theme-toggle').addEventListener('click', () => {
   // Glyph ink is computed from the fill's luminance, so it re-derives per theme.
   if (lastReport) render(lastReport);
 });
+
+$('#people-search').addEventListener('input', (e) => {
+  peopleFilters.text = e.target.value;
+  renderPeople();
+});
+
+$('#people-source').addEventListener('change', (e) => {
+  peopleFilters.source = e.target.value;
+  renderPeople();
+});
+
+for (const [id, key] of [
+  ['#people-signed', 'signed'],
+  ['#people-paid', 'paid'],
+]) {
+  $(id).addEventListener('click', () => {
+    peopleFilters[key] = !peopleFilters[key];
+    $(id).setAttribute('aria-pressed', String(peopleFilters[key]));
+    renderPeople();
+  });
+}
 
 const tableToggle = $('#table-toggle');
 tableToggle.addEventListener('click', () => {
