@@ -400,3 +400,82 @@ test('latest event is null when there is nothing to report', () => {
   });
   assert.equal(report.latestEventAt, null);
 });
+
+test('every person gets a row, most consequential first', () => {
+  const buyer = person({
+    userId: 'b1',
+    distinctIds: ['b1'],
+    email: 'buyer@example.com',
+    first: { utmSource: 'reddit' },
+    last: { utmSource: 'reddit' },
+    signedUp: true,
+    lastSeen: new Date(Date.now() - 9e6).toISOString(),
+  });
+  const signup = person({
+    email: 'signup@example.com',
+    signedUp: true,
+    lastSeen: new Date(Date.now() - 8e6).toISOString(),
+  });
+  const lurker = person({ lastSeen: new Date().toISOString() });
+
+  const report = buildReport({
+    people: [lurker, signup, buyer],
+    payments: {
+      orders: [{ id: 'cs_1', userId: 'b1', paid: true, amount: 49, currency: 'USD' }],
+      noUserId: { orders: 0, revenue: 0, currency: 'USD' },
+    },
+  });
+
+  assert.equal(report.people.length, 3);
+  assert.equal(report.peopleTotal, 3);
+  // Buyer first despite being the least recent; the lurker is last despite
+  // being the most recent. Recency only breaks ties.
+  assert.equal(report.people[0].email, 'buyer@example.com');
+  assert.equal(report.people[0].revenue, 49);
+  assert.equal(report.people[1].email, 'signup@example.com');
+  assert.equal(report.people[2].email, '');
+  assert.equal(report.people[2].paid, false);
+});
+
+test('findings name the numbers they came from', () => {
+  const report = buildReport({
+    people: [
+      ...Array.from({ length: 80 }, () => person({})), // untagged
+      ...Array.from({ length: 20 }, (_, i) =>
+        person({ first: { referringDomain: 'reddit.com' }, signedUp: i < 5 }),
+      ),
+    ],
+    payments: { orders: [], noUserId: { orders: 0, revenue: 0, currency: 'USD' } },
+  });
+
+  const untagged = report.findings.find((f) => /cannot be attributed/.test(f.title));
+  assert.ok(untagged, 'expected an attribution-coverage finding');
+  assert.match(untagged.title, /80%/);
+  assert.match(untagged.detail, /80 of 100/);
+
+  // A source that converts gets credited by name and rate.
+  const best = report.findings.find((f) => /converts best/.test(f.title));
+  assert.match(best.title, /Reddit/);
+  assert.match(best.title, /25%/);
+});
+
+test('a source flagged as crawler traffic is never also praised', () => {
+  const report = buildReport({
+    people: [
+      // 60 views each: not plausibly human, and it "converts" well.
+      ...Array.from({ length: 10 }, (_, i) =>
+        person({ first: { referringDomain: 'crawlerville.example' }, views: 60, signedUp: i < 5 }),
+      ),
+      ...Array.from({ length: 10 }, () => person({})),
+    ],
+    payments: { orders: [], noUserId: { orders: 0, revenue: 0, currency: 'USD' } },
+  });
+
+  assert.ok(report.findings.some((f) => /pageviews per visitor/.test(f.title)));
+  // Recommending more of the traffic the same panel calls crawlers would be
+  // worse than saying nothing.
+  assert.equal(
+    report.findings.some((f) => /converts best/.test(f.title) && /crawlerville/.test(f.title)),
+    false,
+  );
+});

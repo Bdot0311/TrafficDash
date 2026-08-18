@@ -1121,3 +1121,159 @@ a.ghost-btn {
     grid-template-columns: 1fr;
   }
 }
+
+/* --- findings --------------------------------------------------------------
+   The reading of the numbers. Placed above them, because a panel of figures
+   with no interpretation is what "dry" means.
+--------------------------------------------------------------------------- */
+.findings-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.findings {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 10px;
+}
+
+.finding {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  border-left: 3px solid var(--text-muted);
+  border-radius: 9px;
+  padding: 11px 13px;
+}
+
+.finding[data-level='critical'] {
+  border-left-color: var(--status-critical);
+}
+.finding[data-level='warning'] {
+  border-left-color: var(--status-warning);
+}
+.finding[data-level='good'] {
+  border-left-color: var(--status-good);
+}
+
+/* Icon + wording carry the level; color alone never does. */
+.finding-icon {
+  flex: none;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--surface-1);
+  background: var(--text-muted);
+  margin-top: 1px;
+}
+
+.finding[data-level='critical'] .finding-icon {
+  background: var(--status-critical);
+}
+.finding[data-level='warning'] .finding-icon {
+  background: var(--status-warning);
+}
+.finding[data-level='good'] .finding-icon {
+  background: var(--status-good);
+}
+
+.finding-title {
+  margin: 0 0 3px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.finding-detail {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* --- people ---------------------------------------------------------------- */
+.people-controls {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.people-input {
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: var(--plane);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  padding: 6px 9px;
+}
+
+.people-input:focus-visible {
+  outline: 2px solid var(--cat-1);
+  outline-offset: 1px;
+}
+
+#people-search {
+  min-width: 210px;
+}
+
+#people-count {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.people-note {
+  margin: 10px 0 0;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.people-note:empty {
+  display: none;
+}
+
+/* Hundreds of rows must not turn the panel into a mile of page — scroll them
+   inside a fixed height instead, with the header pinned so the columns stay
+   readable however far down you are. */
+#people-wrap {
+  max-height: 460px;
+  overflow: auto;
+  margin-top: 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 9px;
+}
+
+#people-wrap table {
+  margin-top: 0;
+}
+
+#people-wrap thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface-1);
+  box-shadow: inset 0 -1px 0 var(--gridline);
+}
+
+td.muted {
+  color: var(--text-muted);
+}
+
+.person-source {
+  display: block;
+}
+
+.person-conf {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
