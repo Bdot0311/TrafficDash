@@ -401,7 +401,7 @@ test('latest event is null when there is nothing to report', () => {
   assert.equal(report.latestEventAt, null);
 });
 
-test('every person gets a row, most consequential first', () => {
+test('every person gets a row, ordered by who to contact next', () => {
   const buyer = person({
     userId: 'b1',
     distinctIds: ['b1'],
@@ -428,13 +428,59 @@ test('every person gets a row, most consequential first', () => {
 
   assert.equal(report.people.length, 3);
   assert.equal(report.peopleTotal, 3);
-  // Buyer first despite being the least recent; the lurker is last despite
-  // being the most recent. Recency only breaks ties.
-  assert.equal(report.people[0].email, 'buyer@example.com');
-  assert.equal(report.people[0].revenue, 49);
-  assert.equal(report.people[1].email, 'signup@example.com');
-  assert.equal(report.people[2].email, '');
-  assert.equal(report.people[2].paid, false);
+
+  // Ordered by pipeline priority, not by revenue: the signup who never
+  // activated is the one to contact, and the customer who already paid is not
+  // — even though the customer is the larger number.
+  assert.equal(report.people[0].email, 'signup@example.com');
+  assert.equal(report.people[0].stage, 'stalled');
+  assert.equal(report.people[1].stage, 'passive');
+  assert.equal(report.people[2].email, 'buyer@example.com');
+  assert.equal(report.people[2].stage, 'customer');
+  // The buyer is still fully represented, just not at the front of the queue.
+  assert.equal(report.people[2].revenue, 49);
+});
+
+test('pipeline stages report how many are actually reachable', () => {
+  const report = buildReport({
+    people: [
+      person({ email: 'a@example.com', signedUp: true, activationRuns: 2 }),
+      person({ signedUp: true, activationRuns: 1 }), // hot, but no email
+      person({ activationRuns: 3 }), // used it, never signed up
+      person({ sessions: 1 }),
+    ],
+    payments: { orders: [], noUserId: { orders: 0, revenue: 0, currency: 'USD' } },
+  });
+
+  const hot = report.pipeline.find((s) => s.key === 'hot');
+  assert.equal(hot.count, 2);
+  // A stage you cannot contact is not a list, so the two are reported apart.
+  assert.equal(hot.reachable, 1);
+
+  const anon = report.pipeline.find((s) => s.key === 'anon_active');
+  assert.equal(anon.count, 1);
+  assert.equal(anon.reachable, 0);
+
+  // Empty stages are omitted rather than shown as zeroes.
+  assert.equal(report.pipeline.some((s) => s.count === 0), false);
+});
+
+test('a stale hot lead still outranks a fresh passive visit', () => {
+  const report = buildReport({
+    people: [
+      person({ lastSeen: new Date().toISOString() }), // passive, just now
+      person({
+        email: 'hot@example.com',
+        signedUp: true,
+        activationRuns: 2,
+        lastSeen: new Date(Date.now() - 6 * 86400000).toISOString(),
+      }),
+    ],
+    payments: { orders: [], noUserId: { orders: 0, revenue: 0, currency: 'USD' } },
+  });
+  // Recency breaks ties between comparable people; it never promotes someone
+  // who has done nothing above someone who has.
+  assert.equal(report.people[0].email, 'hot@example.com');
 });
 
 test('findings name the numbers they came from', () => {

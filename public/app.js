@@ -430,7 +430,7 @@ const shortDate = (iso) => {
   });
 };
 
-const peopleFilters = { text: '', source: '', signed: false, paid: false };
+const peopleFilters = { text: '', source: '', signed: false, paid: false, stage: '' };
 
 function filteredPeople() {
   const rows = lastReport?.people || [];
@@ -439,6 +439,7 @@ function filteredPeople() {
     if (peopleFilters.signed && !r.signedUp) return false;
     if (peopleFilters.paid && !r.paid) return false;
     if (peopleFilters.source && r.sourceKey !== peopleFilters.source) return false;
+    if (peopleFilters.stage && r.stage !== peopleFilters.stage) return false;
     if (!needle) return true;
     return [r.email, r.source, r.landing, r.utm].join(' ').toLowerCase().includes(needle);
   });
@@ -454,6 +455,7 @@ function renderPeople() {
 
   const head = el('tr', {}, [
     el('th', { text: 'Person' }),
+    el('th', { text: 'Stage' }),
     el('th', { text: 'Source' }),
     el('th', { text: 'Landed on' }),
     el('th', { text: 'First seen' }),
@@ -470,6 +472,10 @@ function renderPeople() {
       // Anonymous people are the norm, not an error — say so rather than
       // showing a raw uuid that means nothing to a reader.
       el('td', { class: r.email ? '' : 'muted', text: r.email || 'anonymous' }),
+      el('td', {}, [
+        el('span', { class: 'person-source', text: r.stageLabel || '—' }),
+        el('span', { class: 'person-conf', text: r.reason || '' }),
+      ]),
       el('td', {}, [
         el('span', { class: 'person-source', text: r.source }),
         el('span', { class: 'person-conf', text: r.confidence }),
@@ -511,6 +517,124 @@ function fillSourceFilter(report) {
   );
   // Survive a re-render so an auto-refresh cannot silently reset the filter.
   if (current && report.sources.some((s) => s.key === current)) select.value = current;
+}
+
+function renderPipeline(report) {
+  const panel = $('#pipeline-panel');
+  if (!report.pipeline?.length) {
+    panel.hidden = true;
+    return;
+  }
+  panel.hidden = false;
+
+  $('#pipeline').replaceChildren(
+    ...report.pipeline.map((stage) => {
+      const active = peopleFilters.stage === stage.key;
+      const card = el(
+        'button',
+        {
+          type: 'button',
+          class: 'pipeline-stage',
+          'data-stage': stage.key,
+          'aria-pressed': String(active),
+        },
+        [
+          el('span', { class: 'pipeline-count', text: fmt.format(stage.count) }),
+          el('span', { class: 'pipeline-label', text: stage.label }),
+          el('span', {
+            class: 'pipeline-reach',
+            // Contactable is the number that decides whether a stage is
+            // workable at all — a stage of 40 with 0 emails is not a list.
+            text: stage.revenue
+              ? money(stage.revenue, report.currency)
+              : `${fmt.format(stage.reachable)} contactable`,
+          }),
+          el('span', { class: 'pipeline-desc', text: stage.description }),
+        ],
+      );
+      card.addEventListener('click', () => {
+        peopleFilters.stage = active ? '' : stage.key;
+        renderPipeline(report);
+        renderPeople();
+        $('#people-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+      return card;
+    }),
+  );
+}
+
+/* --- export ----------------------------------------------------------------
+   The point of a pipeline is that it leaves. These hand the current filtered
+   view to whatever actually does the outreach.
+--------------------------------------------------------------------------- */
+const CSV_COLUMNS = [
+  ['email', (r) => r.email],
+  ['stage', (r) => r.stageLabel],
+  ['reason', (r) => r.reason],
+  ['source', (r) => r.source],
+  ['confidence', (r) => r.confidence],
+  ['landing_page', (r) => r.landing],
+  ['utm', (r) => r.utm],
+  ['first_seen', (r) => r.firstSeen],
+  ['last_seen', (r) => r.lastSeen],
+  ['sessions', (r) => r.sessions],
+  ['views', (r) => r.views],
+  ['activations', (r) => r.scanRuns],
+  ['signed_up', (r) => (r.signedUp ? 'yes' : 'no')],
+  ['paid', (r) => (r.paid ? 'yes' : 'no')],
+  ['revenue', (r) => r.revenue || ''],
+];
+
+// A field starting with = + - @ is executed as a formula by Excel and Sheets.
+// Prefixing with an apostrophe keeps a source name like "=cmd" inert.
+const csvCell = (value) => {
+  const text = String(value ?? '');
+  const guarded = /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
+  return `"${guarded.replace(/"/g, '""')}"`;
+};
+
+function exportCsv() {
+  const rows = filteredPeople();
+  const csv = [
+    CSV_COLUMNS.map(([name]) => csvCell(name)).join(','),
+    ...rows.map((r) => CSV_COLUMNS.map(([, get]) => csvCell(get(r))).join(',')),
+  ].join('\n');
+
+  const stamp = new Date().toISOString().slice(0, 10);
+  const label = peopleFilters.stage || 'all';
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  const link = el('a', { href: url, download: `trafficdash-${label}-${stamp}.csv` });
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  flash('#export-csv', `${rows.length} rows`);
+}
+
+async function copyEmails() {
+  const emails = [...new Set(filteredPeople().map((r) => r.email).filter(Boolean))];
+  if (!emails.length) {
+    flash('#copy-emails', 'none with email');
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(emails.join(', '));
+    flash('#copy-emails', `${emails.length} copied`);
+  } catch {
+    flash('#copy-emails', 'copy blocked');
+  }
+}
+
+// Buttons that fire and show nothing read as broken — that lesson already cost
+// one round on Refresh.
+function flash(selector, message) {
+  const btn = $(selector);
+  const original = btn.dataset.label || btn.textContent;
+  btn.dataset.label = original;
+  btn.textContent = message;
+  setTimeout(() => {
+    btn.textContent = btn.dataset.label;
+  }, 1800);
 }
 
 /* --- render ---------------------------------------------------------------- */
@@ -639,6 +763,7 @@ function render(report) {
 
   paintFreshness();
   renderFindings(report.findings);
+  renderPipeline(report);
   fillSourceFilter(report);
   renderPeople();
 
@@ -802,6 +927,9 @@ for (const [id, key] of [
     renderPeople();
   });
 }
+
+$('#export-csv').addEventListener('click', exportCsv);
+$('#copy-emails').addEventListener('click', copyEmails);
 
 const tableToggle = $('#table-toggle');
 tableToggle.addEventListener('click', () => {

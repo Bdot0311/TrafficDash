@@ -74,6 +74,91 @@ const topKeys = (map, n = 1) =>
     .map(([k]) => k);
 
 /**
+ * Pipeline stages, ordered by how much attention each deserves.
+ *
+ * The ordering is the argument: someone who used the product and did not buy
+ * knows exactly what they are declining, which makes them worth more than a
+ * larger pile of people who never got that far. Volume is not priority.
+ */
+const PIPELINE_STAGES = [
+  {
+    key: 'hot',
+    label: 'Activated · no purchase',
+    description:
+      'Signed up and used the product, then stopped. They know what it does and chose not to pay — the shortest path to revenue, and the only group that can tell you why.',
+    weight: 5,
+  },
+  {
+    key: 'anon_active',
+    label: 'Activated · no account',
+    description:
+      'Used the product without signing up. Real intent, no way to reach them — every one of these is a missed capture.',
+    weight: 4,
+  },
+  {
+    key: 'stalled',
+    label: 'Signed up · never used',
+    description:
+      'Made an account and never ran anything. They wanted it enough to register, so this is an onboarding failure rather than a demand problem.',
+    weight: 3,
+  },
+  {
+    key: 'returning',
+    label: 'Came back · no action',
+    description:
+      'More than one session, nothing done. Interested, unconvinced — worth a reason to act.',
+    weight: 2,
+  },
+  {
+    key: 'passive',
+    label: 'Single visit',
+    description: 'One session, nothing since. Volume, not pipeline.',
+    weight: 1,
+  },
+  {
+    key: 'customer',
+    label: 'Customers',
+    description: 'Already paid. Kept visible for expansion and to see which sources produce buyers.',
+    weight: 0,
+  },
+];
+
+/**
+ * Which bucket a person belongs in, and how urgently.
+ *
+ * Score is stage first, then engagement, then recency — so a hot lead from
+ * last week still outranks a passive visitor from this morning. Recency only
+ * orders people who are otherwise comparable.
+ */
+function classifyForPipeline(row, now = Date.now()) {
+  let key;
+  if (row.paid) key = 'customer';
+  else if (row.signedUp && row.scanRuns > 0) key = 'hot';
+  else if (!row.signedUp && row.scanRuns > 0) key = 'anon_active';
+  else if (row.signedUp) key = 'stalled';
+  else if (row.sessions > 1) key = 'returning';
+  else key = 'passive';
+
+  const stage = PIPELINE_STAGES.find((s) => s.key === key);
+  const engagement = Math.min(row.scanRuns * 10 + row.sessions * 3 + row.views, 60);
+  const days = row.lastSeen ? (now - new Date(row.lastSeen).getTime()) / 86400000 : 999;
+  const recency = Math.max(0, 40 - days * 2);
+
+  const reasons = [];
+  if (row.scanRuns > 0) reasons.push(`${row.scanRuns} run${row.scanRuns === 1 ? '' : 's'}`);
+  if (row.sessions > 1) reasons.push(`${row.sessions} sessions`);
+  if (row.signedUp) reasons.push('signed up');
+  if (!row.email && key !== 'passive') reasons.push('no email on file');
+
+  return {
+    stage: key,
+    stageLabel: stage.label,
+    score: Math.round(stage.weight * 1000 + engagement + recency),
+    reason: reasons.join(' · ') || 'one visit',
+  };
+}
+
+/**
  * Turn the aggregates into statements.
  *
  * Every finding names the number it came from, so it can be checked rather
@@ -383,6 +468,14 @@ export function buildReport({ people, payments }) {
 
   const direct = sources.find((s) => s.key === 'direct');
 
+  // Stage every person, then order by priority rather than by revenue alone —
+  // the point of a pipeline is who to contact next, and the biggest number is
+  // usually someone who has already paid.
+  const now = Date.now();
+  const pipelineRows = rows
+    .map((row) => ({ ...row, ...classifyForPipeline(row, now) }))
+    .sort((a, b) => b.score - a.score);
+
   const round = (n) => Math.round(n * 100) / 100;
   const attributed = round(sources.reduce((sum, s) => sum + s.revenue, 0));
   const unattributed = round(noUserId.revenue + orphanedRevenue);
@@ -411,15 +504,20 @@ export function buildReport({ people, payments }) {
     sources,
     // Most consequential people first: buyers, then signups, then whoever was
     // here most recently. Capped so a large window cannot blow up the payload.
-    people: rows
-      .sort(
-        (a, b) =>
-          b.revenue - a.revenue ||
-          Number(b.signedUp) - Number(a.signedUp) ||
-          new Date(b.lastSeen || 0) - new Date(a.lastSeen || 0),
-      )
-      .slice(0, 1000),
-    peopleTotal: rows.length,
+    people: pipelineRows.slice(0, 1000),
+    peopleTotal: pipelineRows.length,
+    pipeline: PIPELINE_STAGES.map((stage) => {
+      const inStage = pipelineRows.filter((r) => r.stage === stage.key);
+      return {
+        key: stage.key,
+        label: stage.label,
+        description: stage.description,
+        count: inStage.length,
+        // Reachability is the difference between a lead and a statistic.
+        reachable: inStage.filter((r) => r.email).length,
+        revenue: Math.round(inStage.reduce((sum, r) => sum + r.revenue, 0) * 100) / 100,
+      };
+    }).filter((stage) => stage.count > 0),
     findings: deriveFindings({
       sources,
       totals,
