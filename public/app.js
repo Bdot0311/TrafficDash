@@ -409,13 +409,72 @@ function renderFindings(findings) {
       el('div', { class: 'finding', 'data-level': f.level }, [
         // Icon plus level word: status never rides on color alone.
         el('span', { class: 'finding-icon', 'aria-hidden': 'true', text: FINDING_ICON[f.level] }),
-        el('div', {}, [
+        el('div', { class: 'finding-body' }, [
           el('p', { class: 'finding-title', text: f.title }),
           el('p', { class: 'finding-detail', text: f.detail }),
+          findingAction(f.action),
         ]),
       ]),
     ),
   );
+}
+
+/** The button that turns a statement into the list it is about. */
+function findingAction(action) {
+  if (!action) return null;
+
+  if (action.kind === 'link') {
+    return el('a', { class: 'finding-action', href: action.href, text: action.label });
+  }
+
+  if (action.kind === 'utm') {
+    return el('button', {
+      type: 'button',
+      class: 'finding-action',
+      text: action.label,
+      onclick: () => {
+        $('#utm-builder').hidden = false;
+        $('#utm-builder').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        $('#utm-url').focus();
+      },
+    });
+  }
+
+  return el('button', {
+    type: 'button',
+    class: 'finding-action',
+    text: action.label,
+    onclick: () => applyFilter(action.filter || {}),
+  });
+}
+
+/* --- UTM builder ------------------------------------------------------------
+   The one finding with no list behind it: untagged traffic is fixed by the
+   next link you post, not by anything already in the data.
+--------------------------------------------------------------------------- */
+function buildUtmLink() {
+  const base = $('#utm-url').value.trim();
+  if (!base) return '';
+  const source = $('#utm-src').value.trim();
+  const medium = $('#utm-med').value.trim();
+  const campaign = $('#utm-camp').value.trim();
+
+  let url;
+  try {
+    url = new URL(base.startsWith('http') ? base : `https://${base}`);
+  } catch {
+    return '';
+  }
+  if (source) url.searchParams.set('utm_source', source);
+  if (medium) url.searchParams.set('utm_medium', medium);
+  if (campaign) url.searchParams.set('utm_campaign', campaign);
+  return url.toString();
+}
+
+function refreshUtm() {
+  const link = buildUtmLink();
+  $('#utm-out').value = link;
+  $('#utm-copy').disabled = !link;
 }
 
 const shortDate = (iso) => {
@@ -430,19 +489,61 @@ const shortDate = (iso) => {
   });
 };
 
-const peopleFilters = { text: '', source: '', signed: false, paid: false, stage: '' };
+/**
+ * Three-state, not boolean.
+ *
+ * A finding routinely needs "signed up but NOT paid" — the people who stopped
+ * at a stage. Boolean toggles can only express "only the ones who did", so the
+ * interesting half of every drop-off was unreachable.
+ */
+const EMPTY_FILTERS = {
+  text: '',
+  source: '',
+  stage: '',
+  signed: 'any',
+  paid: 'any',
+  activated: 'any',
+};
+let peopleFilters = { ...EMPTY_FILTERS };
+
+const matchesTri = (state, value) =>
+  state === 'any' || (state === 'yes' ? value : !value);
 
 function filteredPeople() {
   const rows = lastReport?.people || [];
   const needle = peopleFilters.text.trim().toLowerCase();
   return rows.filter((r) => {
-    if (peopleFilters.signed && !r.signedUp) return false;
-    if (peopleFilters.paid && !r.paid) return false;
+    if (!matchesTri(peopleFilters.signed, r.signedUp)) return false;
+    if (!matchesTri(peopleFilters.paid, r.paid)) return false;
+    if (!matchesTri(peopleFilters.activated, r.scanRuns > 0)) return false;
     if (peopleFilters.source && r.sourceKey !== peopleFilters.source) return false;
     if (peopleFilters.stage && r.stage !== peopleFilters.stage) return false;
     if (!needle) return true;
     return [r.email, r.source, r.landing, r.utm].join(' ').toLowerCase().includes(needle);
   });
+}
+
+/** Apply a finding's filter, show what is active, and go to the list. */
+function applyFilter(filter) {
+  peopleFilters = { ...EMPTY_FILTERS, ...filter };
+  syncFilterControls();
+  if (lastReport) renderPipeline(lastReport);
+  renderPeople();
+  $('#people-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// Controls must show the filter a finding just applied, or the table looks
+// wrong rather than filtered.
+function syncFilterControls() {
+  $('#people-search').value = peopleFilters.text;
+  $('#people-source').value = peopleFilters.source;
+  $('#people-signed').setAttribute('aria-pressed', String(peopleFilters.signed === 'yes'));
+  $('#people-paid').setAttribute('aria-pressed', String(peopleFilters.paid === 'yes'));
+
+  const active = Object.entries(peopleFilters).some(
+    ([key, value]) => value !== EMPTY_FILTERS[key],
+  );
+  $('#people-clear').hidden = !active;
 }
 
 function renderPeople() {
@@ -553,10 +654,7 @@ function renderPipeline(report) {
         ],
       );
       card.addEventListener('click', () => {
-        peopleFilters.stage = active ? '' : stage.key;
-        renderPipeline(report);
-        renderPeople();
-        $('#people-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        applyFilter(active ? {} : { stage: stage.key });
       });
       return card;
     }),
@@ -601,7 +699,19 @@ function exportCsv() {
   ].join('\n');
 
   const stamp = new Date().toISOString().slice(0, 10);
-  const label = peopleFilters.stage || 'all';
+  // Name the file after the filter that produced it — three different lists
+  // all called "all" is how the wrong one gets sent.
+  const label =
+    [
+      peopleFilters.stage,
+      peopleFilters.source,
+      peopleFilters.signed !== 'any' ? `signed-${peopleFilters.signed}` : '',
+      peopleFilters.paid !== 'any' ? `paid-${peopleFilters.paid}` : '',
+      peopleFilters.activated !== 'any' ? `activated-${peopleFilters.activated}` : '',
+    ]
+      .filter(Boolean)
+      .join('-')
+      .replace(/[^a-z0-9-]+/gi, '-') || 'all';
   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
   const link = el('a', { href: url, download: `trafficdash-${label}-${stamp}.csv` });
   document.body.append(link);
@@ -909,11 +1019,13 @@ $('#theme-toggle').addEventListener('click', () => {
 
 $('#people-search').addEventListener('input', (e) => {
   peopleFilters.text = e.target.value;
+  syncFilterControls();
   renderPeople();
 });
 
 $('#people-source').addEventListener('change', (e) => {
   peopleFilters.source = e.target.value;
+  syncFilterControls();
   renderPeople();
 });
 
@@ -922,11 +1034,28 @@ for (const [id, key] of [
   ['#people-paid', 'paid'],
 ]) {
   $(id).addEventListener('click', () => {
-    peopleFilters[key] = !peopleFilters[key];
-    $(id).setAttribute('aria-pressed', String(peopleFilters[key]));
+    peopleFilters[key] = peopleFilters[key] === 'yes' ? 'any' : 'yes';
+    syncFilterControls();
     renderPeople();
   });
 }
+
+$('#people-clear').addEventListener('click', () => {
+  applyFilter({});
+});
+
+for (const id of ['#utm-url', '#utm-src', '#utm-med', '#utm-camp']) {
+  $(id).addEventListener('input', refreshUtm);
+}
+
+$('#utm-copy').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText($('#utm-out').value);
+    flash('#utm-copy', 'copied');
+  } catch {
+    flash('#utm-copy', 'copy blocked');
+  }
+});
 
 $('#export-csv').addEventListener('click', exportCsv);
 $('#copy-emails').addEventListener('click', copyEmails);

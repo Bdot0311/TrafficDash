@@ -1340,3 +1340,58 @@ td.muted {
   color: var(--text-secondary);
   line-height: 1.45;
 }
+
+/* --- finding actions -------------------------------------------------------
+   The button is the point: a finding you cannot act on from where you read it
+   is a complaint.
+--------------------------------------------------------------------------- */
+.finding-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+
+.finding-action {
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 500;
+  margin-top: 7px;
+  color: var(--cat-1);
+  background: none;
+  border: 1px solid color-mix(in oklab, var(--cat-1) 45%, transparent);
+  border-radius: 7px;
+  padding: 4px 10px;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+}
+
+.finding-action:hover {
+  background: color-mix(in oklab, var(--cat-1) 14%, transparent);
+}
+
+/* --- UTM builder ----------------------------------------------------------- */
+.utm-builder {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.utm-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+}
+
+.utm-out-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+#utm-out {
+  flex: 1;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+}
