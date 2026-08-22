@@ -106,6 +106,15 @@
         <div class="cards" id="cards"></div>
       </section>
 
+      <!-- Who to contact next, ordered by that rather than by volume. -->
+      <section class="panel" id="pipeline-panel" aria-labelledby="pipeline-title" hidden>
+        <div class="panel-head">
+          <h2 id="pipeline-title" class="panel-title">Pipeline</h2>
+          <p class="pipeline-note">Click a stage to work that list.</p>
+        </div>
+        <div class="pipeline" id="pipeline"></div>
+      </section>
+
       <section class="panel" id="people-panel" aria-labelledby="people-title">
         <div class="panel-head">
           <h2 id="people-title" class="panel-title">People <span id="people-count"></span></h2>
@@ -124,6 +133,8 @@
             <button type="button" class="ghost-btn" id="people-paid" aria-pressed="false">
               Paid
             </button>
+            <button type="button" class="ghost-btn" id="copy-emails">Copy emails</button>
+            <button type="button" class="ghost-btn" id="export-csv">Export CSV</button>
           </div>
         </div>
         <div id="people-wrap" class="table-wrap"></div>
