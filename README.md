@@ -202,6 +202,33 @@ Those three numbers are the honest measure of what an identity tool is worth on
 your traffic. The last group has no counterpart here by definition — they never
 identified themselves — so work them from the vendor's own export instead.
 
+## Enriching contacts (RB2B / Retention.com)
+
+Optional, and off unless a key is saved. **Core Identity is email in, profile
+out** — it enriches people you already have an address for. It cannot identify
+anonymous visitors; that is the separate Identity Resolution product, granted
+separately, and the two are easy to confuse because they share an account.
+
+Press **Enrich** in the People panel and it acts on the current filtered view,
+after telling you what it will cost:
+
+```
+Look up 12 people?
+Costs up to 12 credits — one per successful match.
+31 are eligible; the rest need another run.
+147 skipped: no email to look up.
+```
+
+Credits are bought and finite, so the rules are strict:
+
+- nothing runs on its own — only an explicit press, never a refresh
+- `maxPerRun` is a hard ceiling, capped at 500 no matter what is typed
+- **nobody is looked up twice, misses included** — a lookup that found nothing
+  is recorded precisely so the next run does not pay to learn the same nothing
+- the run stops mid-way the moment the API reports the budget is gone, leaving
+  the untried rows untouched for next time
+- emails are **MD5-hashed before sending**; the plaintext never leaves the machine
+
 ## How attribution works
 
 Two attributions run at once, which is why the dashboard says so out loud:

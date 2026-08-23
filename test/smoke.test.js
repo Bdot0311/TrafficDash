@@ -646,3 +646,53 @@ test('an email-less contact is kept and counted, not silently dropped', async ()
 
   clearContacts();
 });
+
+test('enrichment never spends on people it cannot or already did look up', async () => {
+  const { enrichPreview } = await import('../src/enrich.js');
+  const { saveContacts, clearContacts } = await import('../src/contacts.js');
+  clearContacts();
+
+  writeSettings({ rb2b: { apiKey: 'test-key', maxPerRun: 2 } });
+
+  const rows = [
+    { id: 'p1', email: 'a@example.com', contact: null },
+    { id: 'p2', email: 'b@example.com', contact: null },
+    { id: 'p3', email: 'c@example.com', contact: null },
+    { id: 'p4', email: '', contact: null }, // anonymous: no input exists
+    { id: 'p5', email: 'e@example.com', contact: { company: 'Known' } }, // already enriched
+  ];
+
+  let preview = enrichPreview(rows);
+  assert.equal(preview.eligible, 3, 'only people with an email and no contact');
+  assert.equal(preview.willAttempt, 2, 'capped by maxPerRun');
+  assert.equal(preview.skippedNoEmail, 1);
+
+  // A previous run looked p1 up and found nothing. That miss is recorded, so
+  // the next run must not pay to learn the same nothing again.
+  saveContacts([{ sourceKey: 'p1', email: 'a@example.com', name: 'x', miss: true }]);
+
+  preview = enrichPreview(rows);
+  assert.equal(preview.eligible, 2, 'a recorded miss is not retried');
+
+  clearContacts();
+  writeSettings({ rb2b: { apiKey: '', maxPerRun: 25 } });
+});
+
+test('the per-run cap cannot be raised past its hard ceiling', () => {
+  const saved = writeSettings({ rb2b: { maxPerRun: 100000 } });
+  assert.equal(saved.rb2b.maxPerRun, 500, 'a cap above what you own is not a cap');
+
+  const floored = writeSettings({ rb2b: { maxPerRun: 0 } });
+  assert.equal(floored.rb2b.maxPerRun, 25);
+
+  writeSettings({ rb2b: { maxPerRun: 25 } });
+});
+
+test('enrichment refuses to run without a key rather than failing per row', async () => {
+  const { enrichPeople } = await import('../src/enrich.js');
+  writeSettings({ rb2b: { apiKey: '' } });
+
+  const result = await enrichPeople([{ id: 'p1', email: 'a@example.com', contact: null }]);
+  assert.equal(result.ok, false);
+  assert.match(result.error, /API key/);
+});

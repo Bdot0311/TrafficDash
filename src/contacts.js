@@ -65,6 +65,14 @@ export function normalizeContact(raw) {
 
   contact.email = contact.email.toLowerCase();
   contact.name = [contact.firstName, contact.lastName].filter(Boolean).join(' ');
+
+  // Bookkeeping fields are not columns in anyone's export, so the alias walk
+  // above would drop them. `sourceKey` is what stops a paid lookup being paid
+  // for twice, and `miss` is what records that a lookup found nothing — losing
+  // either turns "never charged again" into a lie.
+  for (const field of ['sourceKey', 'miss', 'via', 'seniority']) {
+    if (raw?.[field] !== undefined) contact[field] = raw[field];
+  }
   return contact;
 }
 
@@ -137,11 +145,18 @@ export function readContacts() {
  * is unusable.
  */
 export function saveContacts(rows) {
-  const incoming = rows.map(normalizeContact).filter((c) => c.email || c.linkedin || c.name);
+  const incoming = rows
+    .map(normalizeContact)
+    // A miss carries no identity by design — keep it anyway, it is the record
+    // that stops the next run paying for the same nothing.
+    .filter((c) => c.email || c.linkedin || c.name || c.sourceKey);
   const byKey = new Map();
 
   for (const contact of [...readContacts(), ...incoming]) {
-    const key = contact.email || contact.linkedin || `${contact.name}|${contact.company}`;
+    // sourceKey first: it identifies the person the lookup was bought for, and
+    // is the only key a miss (no email, no name, no company) reliably has.
+    const key =
+      contact.sourceKey || contact.email || contact.linkedin || `${contact.name}|${contact.company}`;
     byKey.set(key, { ...(byKey.get(key) || {}), ...contact });
   }
 

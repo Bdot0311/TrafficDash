@@ -13,6 +13,7 @@ import { fetchPeople, testPostHog, listEventNames } from './src/posthog.js';
 import { fetchPayments, testStripe } from './src/stripe.js';
 import { buildReport } from './src/report.js';
 import { saveContacts, clearContacts, parseCsv, readContacts } from './src/contacts.js';
+import { enrichPeople, enrichPreview, testRb2b } from './src/enrich.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -135,6 +136,7 @@ const server = http.createServer(async (req, res) => {
       // never sent the real value, so it cannot echo it back.
       if (patch.posthog && !patch.posthog.apiKey) delete patch.posthog.apiKey;
       if (patch.stripe && !patch.stripe.apiKey) delete patch.stripe.apiKey;
+      if (patch.rb2b && !patch.rb2b.apiKey) delete patch.rb2b.apiKey;
       writeSettings(patch);
       invalidateCache();
       return json(res, 200, redactedSettings());
@@ -144,6 +146,7 @@ const server = http.createServer(async (req, res) => {
       const { target } = await readBody(req);
       if (target === 'posthog') return json(res, 200, await testPostHog());
       if (target === 'stripe') return json(res, 200, await testStripe());
+      if (target === 'rb2b') return json(res, 200, await testRb2b());
       return json(res, 400, { ok: false, error: 'Unknown target' });
     }
 
@@ -177,6 +180,24 @@ const server = http.createServer(async (req, res) => {
         stored: contacts.length,
         withEmail: contacts.filter((c) => c.email).length,
       });
+    }
+
+    // Enrichment spends real credits, so the preview is a separate call that
+    // spends none — the UI states the cost before anything is charged.
+    if (url.pathname === '/api/enrich/preview' && req.method === 'POST') {
+      const { ids = [] } = await readBody(req);
+      const report = await getReport();
+      const rows = (report.people || []).filter((r) => ids.includes(r.id));
+      return json(res, 200, enrichPreview(rows));
+    }
+
+    if (url.pathname === '/api/enrich' && req.method === 'POST') {
+      const { ids = [], limit } = await readBody(req);
+      const report = await getReport();
+      const rows = (report.people || []).filter((r) => ids.includes(r.id));
+      const result = await enrichPeople(rows, { limit });
+      invalidateCache();
+      return json(res, result.ok ? 200 : 400, result);
     }
 
     if (url.pathname === '/api/events') {
