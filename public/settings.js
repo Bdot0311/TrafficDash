@@ -21,7 +21,7 @@ const setValue = (name, value) => {
 // Last test verdict per target. Held as state rather than left in the DOM,
 // because loadSettings() repaints both chips — so a verdict written straight
 // to the element is wiped the next time the other panel reloads.
-const lastTest = { posthog: null, stripe: null };
+const lastTest = { posthog: null, stripe: null, rb2b: null };
 
 function setStatus(id, state, label) {
   const chip = $(id);
@@ -61,6 +61,9 @@ async function loadSettings() {
   setValue('events.activation', s.events.activation);
   setValue('events.signup', s.events.signup);
   setValue('events.lead', s.events.lead);
+  setValue('rb2b.baseUrl', s.rb2b.baseUrl);
+  setValue('rb2b.maxPerRun', s.rb2b.maxPerRun);
+  setValue('rb2b.route', s.rb2b.route);
   setValue('windowDays', s.windowDays);
   setValue('cacheSeconds', s.cacheSeconds);
 
@@ -79,9 +82,14 @@ async function loadSettings() {
     stripeHint.dataset.state = '';
   }
 
+  $('#hint-rb2b-key').textContent = s.rb2b.apiKeySet
+    ? `Stored: ${s.rb2b.apiKeyMasked}. Leave blank to keep it.`
+    : 'Leave blank to skip enrichment entirely.';
+
   // Absent a test verdict, a stored key is all we know — claim no more.
   paintStatus('posthog', s.connected.posthog);
   paintStatus('stripe', s.connected.stripe);
+  paintStatus('rb2b', s.rb2b.apiKeySet);
 
   if (s.connected.posthog) loadEventNames();
   return s;
@@ -157,6 +165,12 @@ function collect() {
       .split(',')
       .map((h) => h.trim())
       .filter(Boolean),
+    rb2b: {
+      apiKey: get('rb2b.apiKey'),
+      baseUrl: get('rb2b.baseUrl') || 'https://api.rb2b.com',
+      route: get('rb2b.route') || 'business',
+      maxPerRun: Number(get('rb2b.maxPerRun')) || 25,
+    },
     events: {
       activation: get('events.activation'),
       signup: get('events.signup'),
@@ -188,10 +202,12 @@ form.addEventListener('submit', async (event) => {
   // Clear the key fields so a stored secret never sits in the DOM.
   form.elements['posthog.apiKey'].value = '';
   form.elements['stripe.apiKey'].value = '';
+  form.elements['rb2b.apiKey'].value = '';
 
   // Saving may have changed a key, so any earlier verdict no longer applies.
   lastTest.posthog = null;
   lastTest.stripe = null;
+  lastTest.rb2b = null;
 
   await loadSettings();
   result.dataset.state = 'ok';
@@ -222,6 +238,7 @@ for (const button of document.querySelectorAll('[data-test]')) {
 
     form.elements['posthog.apiKey'].value = '';
     form.elements['stripe.apiKey'].value = '';
+    form.elements['rb2b.apiKey'].value = '';
     // Reload first — it resets the chips to "Key saved", so the test result
     // has to be applied after it or the outcome is immediately overwritten.
     await loadSettings();

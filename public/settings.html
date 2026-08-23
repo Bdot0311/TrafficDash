@@ -99,6 +99,62 @@
           </div>
         </section>
 
+        <!-- ---------------- RB2B ---------------- -->
+        <section class="panel form-section">
+          <div class="section-title-row">
+            <h2 class="panel-title">RB2B enrichment <span class="field-tag">Optional</span></h2>
+            <span class="status-chip" id="status-rb2b" data-state="off">Not configured</span>
+          </div>
+          <p class="help">
+            Core Identity is <b>email in, profile out</b> — it enriches people you already
+            have an address for. It cannot identify anonymous visitors; that is the separate
+            Identity Resolution product, granted separately.
+          </p>
+
+          <label class="field">
+            <span class="field-label">API key</span>
+            <input name="rb2b.apiKey" type="password" autocomplete="off" placeholder="…" />
+            <span class="field-hint" id="hint-rb2b-key"></span>
+          </label>
+
+          <div class="field-row">
+            <label class="field">
+              <span class="field-label">Base URL</span>
+              <input name="rb2b.baseUrl" placeholder="https://api.rb2b.com" />
+            </label>
+
+            <label class="field">
+              <span class="field-label">Max lookups per run</span>
+              <input name="rb2b.maxPerRun" type="number" min="1" max="500" />
+              <span class="field-hint">
+                A hard ceiling on credits any one run can spend. Set it at or below the
+                credits you actually own.
+              </span>
+            </label>
+          </div>
+
+          <label class="field">
+            <span class="field-label">Route</span>
+            <select name="rb2b.route" class="people-input">
+              <option value="business">Professional — employer, title, seniority, firmographics</option>
+              <option value="person">Universal — work + personal, everything</option>
+              <option value="consumer">Personal — B2C attributes, location, recency</option>
+            </select>
+          </label>
+
+          <div class="test-row">
+            <button type="button" class="ghost-btn" data-test="rb2b">Test connection</button>
+            <span class="test-result" id="result-rb2b"></span>
+          </div>
+
+          <div class="callout">
+            <b>Emails are hashed before they are sent.</b> These routes accept MD5, so the
+            plaintext address never leaves this machine. Lookups run only when you press
+            Enrich, never on a refresh, and nobody is looked up twice — misses included, so
+            a second run never pays to learn the same nothing again.
+          </div>
+        </section>
+
         <!-- ---------------- Your site ---------------- -->
         <section class="panel form-section">
           <h2 class="panel-title">Your site</h2>

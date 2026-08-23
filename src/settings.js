@@ -35,6 +35,16 @@ const DEFAULTS = {
   stripe: {
     apiKey: process.env.STRIPE_API_KEY || '',
   },
+  // RB2B / Retention.com Core Identity. Credits are finite and spent per
+  // successful lookup, so enrichment never runs on its own and never exceeds
+  // maxPerRun in a single pass.
+  rb2b: {
+    apiKey: process.env.RB2B_API_KEY || '',
+    baseUrl: process.env.RB2B_BASE_URL || 'https://api.rb2b.com',
+    route: process.env.RB2B_ROUTE || 'business',
+    maxPerRun: Number(process.env.RB2B_MAX_PER_RUN || 25),
+    hashEmails: true,
+  },
   // Your own hostnames. Referrals from these are Internal (Site Links) —
   // not acquisition — and get pulled out of Direct.
   siteHosts: (process.env.SITE_HOSTS || '')
@@ -98,6 +108,10 @@ export function writeSettings(patch) {
   next.posthog.projectId = String(next.posthog.projectId || '').trim();
   next.posthog.apiKey = String(next.posthog.apiKey || '').trim();
   next.stripe.apiKey = String(next.stripe.apiKey || '').trim();
+  next.rb2b.apiKey = String(next.rb2b.apiKey || '').trim();
+  next.rb2b.baseUrl = String(next.rb2b.baseUrl || '').trim().replace(/\/+$/, '');
+  // A cap above the credits you own is not a cap. Bounded hard.
+  next.rb2b.maxPerRun = Math.min(Math.max(Number(next.rb2b.maxPerRun) || 25, 1), 500);
   next.siteHosts = (Array.isArray(next.siteHosts) ? next.siteHosts : [])
     .map((h) =>
       String(h)
@@ -138,6 +152,14 @@ export function redactedSettings() {
       apiKeyMasked: maskKey(s.stripe.apiKey),
       // A writable secret key here is a real problem, not a style preference.
       usingSecretKey: /^sk_/.test(s.stripe.apiKey || ''),
+    },
+    rb2b: {
+      apiKeySet: Boolean(s.rb2b.apiKey),
+      apiKeyMasked: maskKey(s.rb2b.apiKey),
+      baseUrl: s.rb2b.baseUrl,
+      route: s.rb2b.route,
+      maxPerRun: s.rb2b.maxPerRun,
+      hashEmails: s.rb2b.hashEmails,
     },
     siteHosts: s.siteHosts,
     events: s.events,

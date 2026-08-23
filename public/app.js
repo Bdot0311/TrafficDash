@@ -1090,6 +1090,79 @@ $('#utm-copy').addEventListener('click', async () => {
   }
 });
 
+/**
+ * Enrichment spends credits, so it previews first and never runs on anything
+ * but an explicit press. The confirm names the exact number of lookups: a
+ * button that silently spends money is worse than one that silently does
+ * nothing, and this project has already shipped the second kind once.
+ */
+$('#enrich-people').addEventListener('click', async () => {
+  const ids = filteredPeople().map((r) => r.id);
+  if (!ids.length) {
+    flash('#enrich-people', 'nothing selected');
+    return;
+  }
+
+  const preview = await (
+    await fetch('/api/enrich/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
+    })
+  ).json();
+
+  if (!preview.willAttempt) {
+    flash(
+      '#enrich-people',
+      preview.skippedNoEmail ? 'none have an email' : 'all already looked up',
+    );
+    return;
+  }
+
+  const capped = preview.eligible > preview.willAttempt;
+  const proceed = window.confirm(
+    `Look up ${preview.willAttempt} ${preview.willAttempt === 1 ? 'person' : 'people'}?\n\n` +
+      `Costs up to ${preview.willAttempt} credits — one per successful match.\n` +
+      (capped ? `${preview.eligible} are eligible; the rest need another run.\n` : '') +
+      (preview.skippedNoEmail
+        ? `${preview.skippedNoEmail} skipped: no email to look up.\n`
+        : '') +
+      `\nAnyone already tried is never charged for again.`,
+  );
+  if (!proceed) return;
+
+  const button = $('#enrich-people');
+  button.disabled = true;
+  button.textContent = 'Enriching…';
+
+  try {
+    const result = await (
+      await fetch('/api/enrich', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      })
+    ).json();
+
+    button.disabled = false;
+    button.textContent = 'Enrich';
+
+    if (!result.ok) {
+      flash('#enrich-people', result.error || 'failed');
+      return;
+    }
+    flash('#enrich-people', `${result.matched} matched`);
+    // Running out of credits mid-run is worth interrupting for — the remaining
+    // rows are untouched and the next run resumes from there.
+    if (result.stoppedBecause) window.alert(result.stoppedBecause);
+    await load({ force: true });
+  } catch {
+    button.disabled = false;
+    button.textContent = 'Enrich';
+    flash('#enrich-people', 'failed');
+  }
+});
+
 $('#import-contacts').addEventListener('click', () => $('#contacts-file').click());
 
 $('#contacts-file').addEventListener('change', async (event) => {
