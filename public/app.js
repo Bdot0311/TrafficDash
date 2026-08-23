@@ -549,6 +549,8 @@ function syncFilterControls() {
 function renderPeople() {
   if (!lastReport) return;
   const rows = filteredPeople();
+  // Columns appear only once there is something behind them.
+  const hasContacts = (lastReport.contacts?.matched || 0) > 0;
   const total = lastReport.peopleTotal || 0;
 
   $('#people-count').textContent =
@@ -557,6 +559,7 @@ function renderPeople() {
   const head = el('tr', {}, [
     el('th', { text: 'Person' }),
     el('th', { text: 'Stage' }),
+    ...(hasContacts ? [el('th', { text: 'Company' })] : []),
     el('th', { text: 'Source' }),
     el('th', { text: 'Landed on' }),
     el('th', { text: 'First seen' }),
@@ -577,6 +580,14 @@ function renderPeople() {
         el('span', { class: 'person-source', text: r.stageLabel || '—' }),
         el('span', { class: 'person-conf', text: r.reason || '' }),
       ]),
+      ...(hasContacts
+        ? [
+            el('td', { class: r.contact ? '' : 'muted' }, [
+              el('span', { class: 'person-source', text: r.contact?.company || '—' }),
+              el('span', { class: 'person-conf', text: r.contact?.title || '' }),
+            ]),
+          ]
+        : []),
       el('td', {}, [
         el('span', { class: 'person-source', text: r.source }),
         el('span', { class: 'person-conf', text: r.confidence }),
@@ -669,6 +680,9 @@ const CSV_COLUMNS = [
   ['email', (r) => r.email],
   ['stage', (r) => r.stageLabel],
   ['reason', (r) => r.reason],
+  ['company', (r) => r.contact?.company || ''],
+  ['job_title', (r) => r.contact?.title || ''],
+  ['linkedin', (r) => r.contact?.linkedin || ''],
   ['source', (r) => r.source],
   ['confidence', (r) => r.confidence],
   ['landing_page', (r) => r.landing],
@@ -745,6 +759,24 @@ function flash(selector, message) {
   setTimeout(() => {
     btn.textContent = btn.dataset.label;
   }, 1800);
+}
+
+function renderContactsNote(report) {
+  const note = $('#contacts-note');
+  const c = report.contacts;
+  if (!c || !c.imported) {
+    note.textContent = '';
+    return;
+  }
+  const unaddressable = c.imported - c.withEmail;
+  // Both gaps stated plainly: an identity tool's output is only as useful as
+  // the share of it that carries an email AND matches someone you have seen.
+  note.textContent =
+    `${fmt.format(c.imported)} contacts imported · ${fmt.format(c.matched)} matched to a person by email` +
+    (unaddressable > 0 ? ` · ${fmt.format(unaddressable)} have no email address` : '') +
+    (c.withEmail > c.matched
+      ? ` · ${fmt.format(c.withEmail - c.matched)} have an email but never signed up here`
+      : '');
 }
 
 /* --- render ---------------------------------------------------------------- */
@@ -872,6 +904,7 @@ function render(report) {
   $('#table-wrap').replaceChildren(fullTable(report));
 
   paintFreshness();
+  renderContactsNote(report);
   renderFindings(report.findings);
   renderPipeline(report);
   fillSourceFilter(report);
@@ -1055,6 +1088,30 @@ $('#utm-copy').addEventListener('click', async () => {
   } catch {
     flash('#utm-copy', 'copy blocked');
   }
+});
+
+$('#import-contacts').addEventListener('click', () => $('#contacts-file').click());
+
+$('#contacts-file').addEventListener('change', async (event) => {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  const text = await file.text();
+  const isJson = file.name.endsWith('.json') || text.trim().startsWith('[');
+
+  const res = await fetch('/api/contacts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: isJson ? text : JSON.stringify({ csv: text }),
+  });
+  const result = await res.json();
+  event.target.value = '';
+
+  if (!res.ok) {
+    flash('#import-contacts', result.error || 'import failed');
+    return;
+  }
+  flash('#import-contacts', `${result.stored} stored`);
+  await load({ force: true });
 });
 
 $('#export-csv').addEventListener('click', exportCsv);

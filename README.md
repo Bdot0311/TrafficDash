@@ -178,6 +178,30 @@ Filter by source, search by email or landing page, or narrow to signups and
 buyers only. This is where a number gets checked — an aggregate that looks wrong
 usually has three rows behind it that explain why.
 
+## Importing contacts
+
+**Import contacts** in the People panel takes a CSV or JSON export — RB2B's
+column names are recognised, as are the obvious variants — and joins it to
+people **by exact email only**.
+
+That restriction is deliberate. RB2B's payload carries LinkedIn URL, name,
+title, company, business email, location, "Seen At", referrer and captured URL.
+It carries no IP, no session id and no PostHog distinct id, so nothing in it is
+a key shared with the events this reads. The tempting substitute is matching on
+captured URL plus a timestamp window — but two people landing on `/` from
+LinkedIn ten minutes apart would swap identities, and a wrong match looks
+exactly like a right one. A name attached to someone else's behaviour is worse
+than a blank, so unmatched contacts stay unmatched and are counted as such:
+
+```
+147 contacts imported · 31 matched to a person by email ·
+44 have no email address · 72 have an email but never signed up here
+```
+
+Those three numbers are the honest measure of what an identity tool is worth on
+your traffic. The last group has no counterpart here by definition — they never
+identified themselves — so work them from the vendor's own export instead.
+
 ## How attribution works
 
 Two attributions run at once, which is why the dashboard says so out loud:

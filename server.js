@@ -12,6 +12,7 @@ import {
 import { fetchPeople, testPostHog, listEventNames } from './src/posthog.js';
 import { fetchPayments, testStripe } from './src/stripe.js';
 import { buildReport } from './src/report.js';
+import { saveContacts, clearContacts, parseCsv, readContacts } from './src/contacts.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -144,6 +145,38 @@ const server = http.createServer(async (req, res) => {
       if (target === 'posthog') return json(res, 200, await testPostHog());
       if (target === 'stripe') return json(res, 200, await testStripe());
       return json(res, 400, { ok: false, error: 'Unknown target' });
+    }
+
+    // Accepts a pasted RB2B export: CSV text, a JSON array, or a single
+    // webhook-shaped object. Same endpoint either way, so a future webhook can
+    // POST here directly if this ever runs somewhere public.
+    if (url.pathname === '/api/contacts' && req.method === 'POST') {
+      const body = await readBody(req);
+      const rows = Array.isArray(body)
+        ? body
+        : typeof body?.csv === 'string'
+          ? parseCsv(body.csv)
+          : body && typeof body === 'object'
+            ? [body]
+            : [];
+      if (!rows.length) return json(res, 400, { error: 'No rows found in that import.' });
+      const result = saveContacts(rows);
+      invalidateCache();
+      return json(res, 200, result);
+    }
+
+    if (url.pathname === '/api/contacts' && req.method === 'DELETE') {
+      clearContacts();
+      invalidateCache();
+      return json(res, 200, { stored: 0 });
+    }
+
+    if (url.pathname === '/api/contacts') {
+      const contacts = readContacts();
+      return json(res, 200, {
+        stored: contacts.length,
+        withEmail: contacts.filter((c) => c.email).length,
+      });
     }
 
     if (url.pathname === '/api/events') {
