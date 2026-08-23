@@ -221,12 +221,20 @@ Costs up to 12 credits — one per successful match.
 
 Credits are bought and finite, so the rules are strict:
 
+Lookups go out in **batch** — one request per selection (up to 1,000 hashes),
+not one per person — and the credits reported back by the API are what gets
+shown, rather than a count inferred from matches. Billing is per record: the
+full configured cost when both the business profile and device data resolve,
+1 credit when only one does, and **nothing for a miss**.
+
 - nothing runs on its own — only an explicit press, never a refresh
 - `maxPerRun` is a hard ceiling, capped at 500 no matter what is typed
 - **nobody is looked up twice, misses included** — a lookup that found nothing
   is recorded precisely so the next run does not pay to learn the same nothing
-- the run stops mid-way the moment the API reports the budget is gone, leaving
-  the untried rows untouched for next time
+- the run stops the moment the API reports `credits_exhausted`, and in that
+  case **nobody is recorded as tried** — the response cannot say which hashes
+  were reached before the credits ran out, and marking the rest would
+  permanently skip people nobody ever paid to look up
 - emails are **MD5-hashed before sending**; the plaintext never leaves the machine
 
 ## How attribution works
