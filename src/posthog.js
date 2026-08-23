@@ -65,6 +65,7 @@ export async function testPostHog() {
         days: 1,
         activation: settings.events.activation,
         signup: settings.events.signup,
+        lead: settings.events.lead,
         limit: 1,
       }),
     );
@@ -125,11 +126,12 @@ export async function listEventNames() {
  * whether the query the dashboard depends on is even valid. That gap is how a
  * green "Connected" chip coexisted with a dashboard that could not load.
  */
-export function buildPeopleQuery({ days, activation, signup, limit = 50000 }) {
+export function buildPeopleQuery({ days, activation, signup, lead, limit = 50000 }) {
   // Only count an activation/signup event if one is actually configured —
   // an unset name must never silently match everything.
   const activationExpr = activation ? `countIf(event = ${sq(activation)})` : '0';
   const signupExpr = signup ? `countIf(event = ${sq(signup)})` : '0';
+  const leadExpr = lead ? `countIf(event = ${sq(lead)})` : '0';
 
   // Inlined rather than hoisted into a WITH clause: HogQL binds WITH aliases
   // before the FROM scope exists, so referencing properties.* up there fails
@@ -164,6 +166,7 @@ export function buildPeopleQuery({ days, activation, signup, limit = 50000 }) {
       countIf(event = '$pageview')                          AS views,
       ${activationExpr} AS activation_runs,
       ${signupExpr} AS signup_events,
+      ${leadExpr} AS lead_events,
       max(person.properties.email)                          AS email
     FROM events
     WHERE timestamp >= now() - INTERVAL ${Number(days)} DAY
@@ -186,6 +189,7 @@ export async function fetchPeople() {
     days: Number(settings.windowDays) || 30,
     activation: settings.events.activation,
     signup: settings.events.signup,
+    lead: settings.events.lead,
   });
 
   return (await hogql(query)).map((r) => ({
@@ -211,9 +215,13 @@ export async function fetchPeople() {
     sessions: Number(r.sessions || 0),
     views: Number(r.views || 0),
     activationRuns: Number(r.activation_runs || 0),
-    // identify(userId, { email }) is what makes someone a signup: an explicit
-    // signup event, or an email landing on the person.
-    signedUp: Number(r.signup_events || 0) > 0 || Boolean(r.email),
+    // An email alone no longer proves an account exists: an email gate sets one
+    // on an anonymous person. So email counts as a signup only when the person
+    // did NOT arrive through the gate, and an explicit signup event always wins.
+    signedUp:
+      Number(r.signup_events || 0) > 0 ||
+      (Boolean(r.email) && Number(r.lead_events || 0) === 0),
+    leadCaptured: Number(r.lead_events || 0) > 0,
     email: r.email || '',
   }));
 }

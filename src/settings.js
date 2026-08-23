@@ -44,6 +44,9 @@ const DEFAULTS = {
   events: {
     activation: process.env.POSTHOG_ACTIVATION_EVENT || '',
     signup: process.env.POSTHOG_SIGNUP_EVENT || '',
+    // Someone who traded an email for a result is reachable but has no
+    // account. Without this, they are indistinguishable from a real signup.
+    lead: process.env.POSTHOG_LEAD_EVENT || '',
   },
   windowDays: Number(process.env.WINDOW_DAYS || 30),
   // Caps how stale the numbers can be. Five minutes made a live dashboard feel

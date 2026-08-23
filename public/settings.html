@@ -137,7 +137,20 @@
             <span class="field-label">Signup event <span class="field-tag">Signups</span></span>
             <input name="events.signup" list="event-names" placeholder="signup" />
             <span class="field-hint">
-              Anyone identified with an email also counts, even without this event.
+              Anyone identified with an email also counts, even without this event —
+              unless they arrived through the lead gate below.
+            </span>
+          </label>
+
+          <label class="field">
+            <span class="field-label">
+              Lead capture event <span class="field-tag">Gave email</span>
+            </span>
+            <input name="events.lead" list="event-names" placeholder="lead_captured" />
+            <span class="field-hint">
+              Fired when someone trades an email for something without registering. They
+              are reachable but have no account, so they get their own pipeline stage
+              instead of inflating signups. Leave blank if you have no such gate.
             </span>
           </label>
 
