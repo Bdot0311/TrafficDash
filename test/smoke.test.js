@@ -525,3 +525,70 @@ test('a source flagged as crawler traffic is never also praised', () => {
     false,
   );
 });
+
+test('a gated lead is never counted as a signup', () => {
+  writeSettings({ events: { activation: 'scan_run', signup: 'signup', lead: 'lead_captured' } });
+
+  const report = buildReport({
+    people: [
+      // Gave an email at the gate. Reachable, but has no account.
+      person({
+        email: 'lead@example.com',
+        signedUp: false,
+        leadCaptured: true,
+        activationRuns: 1,
+        first: { referringDomain: 'reddit.com' },
+      }),
+      // Real account.
+      person({ email: 'real@example.com', signedUp: true, activationRuns: 1 }),
+    ],
+    payments: { orders: [], noUserId: { orders: 0, revenue: 0, currency: 'USD' } },
+  });
+
+  // The whole point: one signup, not two.
+  assert.equal(report.totals.signups, 1);
+
+  const lead = report.people.find((r) => r.email === 'lead@example.com');
+  assert.equal(lead.stage, 'lead');
+  assert.match(lead.reason, /email via gate/);
+
+  const real = report.people.find((r) => r.email === 'real@example.com');
+  assert.equal(real.stage, 'hot');
+
+  // Reachable, and ranked above an anonymous activator for exactly that reason.
+  const stage = report.pipeline.find((s) => s.key === 'lead');
+  assert.equal(stage.count, 1);
+  assert.equal(stage.reachable, 1);
+});
+
+test('leads outrank anonymous activators because they can be contacted', () => {
+  writeSettings({ events: { activation: 'scan_run', signup: 'signup', lead: 'lead_captured' } });
+
+  const report = buildReport({
+    people: [
+      person({ activationRuns: 5, sessions: 4 }), // busier, but unreachable
+      person({ email: 'lead@example.com', leadCaptured: true, activationRuns: 1 }),
+    ],
+    payments: { orders: [], noUserId: { orders: 0, revenue: 0, currency: 'USD' } },
+  });
+
+  assert.equal(report.people[0].stage, 'lead');
+  assert.equal(report.people[1].stage, 'anon_active');
+});
+
+test('a lead event without a signup event is called out as ambiguous', () => {
+  writeSettings({ events: { activation: 'scan_run', signup: '', lead: 'lead_captured' } });
+
+  const report = buildReport({
+    people: [person({ email: 'lead@example.com', leadCaptured: true, activationRuns: 1 })],
+    payments: { orders: [], noUserId: { orders: 0, revenue: 0, currency: 'USD' } },
+  });
+
+  // Without a signup event, email presence is the only signup signal — and a
+  // gated lead has one too, so the two cannot be told apart.
+  const warning = report.warnings.find((w) => /lead event is set but no signup event/.test(w.text));
+  assert.ok(warning);
+  assert.equal(warning.level, 'serious');
+
+  writeSettings({ events: { activation: 'scan_run', signup: 'signup', lead: '' } });
+});

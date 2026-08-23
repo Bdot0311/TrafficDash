@@ -164,6 +164,13 @@ human, how much revenue has no source. A source flagged as crawler traffic is
 excluded from the praise — recommending more of the traffic the same panel calls
 bots would be worse than saying nothing.
 
+**Pipeline** stages everyone by what they did. A gated lead — someone who
+traded an email for a result without registering — gets its own stage rather
+than being folded into signups: they are reachable, they have no account, and
+counting them as signups would overstate the funnel while hiding that they are
+the easiest people here to contact. Set the lead event under
+**Events → Lead capture event**; leave it blank if you have no gate.
+
 **People** is one row per person: email if known, the source that found them,
 what they landed on, sessions, views, activations, whether they signed up, and
 what they paid. Buyers first, then signups, then whoever was here most recently.

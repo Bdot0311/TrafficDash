@@ -86,34 +86,41 @@ const PIPELINE_STAGES = [
     label: 'Activated · no purchase',
     description:
       'Signed up and used the product, then stopped. They know what it does and chose not to pay — the shortest path to revenue, and the only group that can tell you why.',
-    weight: 5,
+    weight: 7,
+  },
+  {
+    key: 'lead',
+    label: 'Gave email · no account',
+    description:
+      'Traded an email for a result but never registered. Reachable and already convinced enough to hand over contact details — not a signup, and counting them as one would overstate the funnel.',
+    weight: 6,
   },
   {
     key: 'anon_active',
     label: 'Activated · no account',
     description:
-      'Used the product without signing up. Real intent, no way to reach them — every one of these is a missed capture.',
-    weight: 4,
+      'Used the product without signing up or leaving an email. Real intent, no way to reach them — every one of these is a missed capture.',
+    weight: 5,
   },
   {
     key: 'stalled',
     label: 'Signed up · never used',
     description:
       'Made an account and never ran anything. They wanted it enough to register, so this is an onboarding failure rather than a demand problem.',
-    weight: 3,
+    weight: 4,
   },
   {
     key: 'returning',
     label: 'Came back · no action',
     description:
       'More than one session, nothing done. Interested, unconvinced — worth a reason to act.',
-    weight: 2,
+    weight: 3,
   },
   {
     key: 'passive',
     label: 'Single visit',
     description: 'One session, nothing since. Volume, not pipeline.',
-    weight: 1,
+    weight: 2,
   },
   {
     key: 'customer',
@@ -134,6 +141,9 @@ function classifyForPipeline(row, now = Date.now()) {
   let key;
   if (row.paid) key = 'customer';
   else if (row.signedUp && row.scanRuns > 0) key = 'hot';
+  // Checked before anon_active: a gated lead has also activated, and being
+  // reachable is what separates the two.
+  else if (row.leadCaptured && !row.signedUp) key = 'lead';
   else if (!row.signedUp && row.scanRuns > 0) key = 'anon_active';
   else if (row.signedUp) key = 'stalled';
   else if (row.sessions > 1) key = 'returning';
@@ -148,6 +158,7 @@ function classifyForPipeline(row, now = Date.now()) {
   if (row.scanRuns > 0) reasons.push(`${row.scanRuns} run${row.scanRuns === 1 ? '' : 's'}`);
   if (row.sessions > 1) reasons.push(`${row.sessions} sessions`);
   if (row.signedUp) reasons.push('signed up');
+  if (row.leadCaptured && !row.signedUp) reasons.push('email via gate');
   if (!row.email && key !== 'passive') reasons.push('no email on file');
 
   return {
@@ -180,7 +191,7 @@ const DROP_FILTERS = {
   paid: { signed: 'yes', paid: 'no' },
 };
 
-function deriveFindings({ sources, totals, revenue, settings }) {
+function deriveFindings({ sources, totals, revenue, settings, rows = [] }) {
   const out = [];
   const pct = (n, d) => (d > 0 ? Math.round((n / d) * 100) : 0);
   const visitors = totals.visitors;
@@ -290,6 +301,22 @@ function deriveFindings({ sources, totals, revenue, settings }) {
       title: `${fmtMoney(revenue.unattributed, 'USD')} of revenue has no source`,
       detail: `Out of ${fmtMoney(revenue.collected, 'USD')} collected. Until checkout sends both metadata.user_id and metadata.posthog_distinct_id, this money cannot be credited to whatever produced it.`,
       action: { kind: 'link', label: 'How to fix the join', href: '/settings' },
+    });
+  }
+
+  // --- captured leads --------------------------------------------------------
+  const leads = rows.filter((r) => r.stage === 'lead');
+  if (leads.length > 0) {
+    const reachable = leads.filter((r) => r.email).length;
+    out.push({
+      level: 'good',
+      title: `${leads.length} gave an email without signing up`,
+      detail: `${reachable} of them left a usable address. They are counted apart from signups on purpose — they have no account, and folding them in would overstate the funnel while hiding the fact that they are the easiest people here to contact.`,
+      action: {
+        kind: 'filter',
+        label: `Work these ${leads.length}`,
+        filter: { stage: 'lead' },
+      },
     });
   }
 
@@ -412,6 +439,7 @@ export function buildReport({ people, payments }) {
       views: person.views,
       scanRuns: person.activationRuns,
       signedUp: person.signedUp,
+      leadCaptured: Boolean(person.leadCaptured),
       paid: personPaid.length > 0,
       orders: personPaid.length,
       revenue: Math.round(personPaid.reduce((sum, o) => sum + o.amount, 0) * 100) / 100,
@@ -560,12 +588,20 @@ export function buildReport({ people, payments }) {
       totals,
       revenue: { attributed, unattributed, collected: round(attributed + unattributed) },
       settings,
+      rows: pipelineRows,
     }),
     warnings: [
       !settings.events.activation && {
         level: 'warning',
         text: 'No activation event set, so Scanners reads 0 everywhere. Pick one in Settings.',
       },
+      // Without a signup event, "has an email" is the only signup signal — and
+      // a gated lead has one too. The two become indistinguishable.
+      settings.events.lead &&
+        !settings.events.signup && {
+          level: 'serious',
+          text: 'A lead event is set but no signup event is. Anyone who gates and later registers still counts as a lead, so signups are undercounted. Set the signup event in Settings.',
+        },
       settings.siteHosts.length === 0 && {
         level: 'warning',
         text: 'No site hosts set, so your own internal links are being counted as referral traffic. Add them in Settings.',

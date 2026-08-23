@@ -60,6 +60,7 @@ async function loadSettings() {
   setValue('siteHosts', (s.siteHosts || []).join(', '));
   setValue('events.activation', s.events.activation);
   setValue('events.signup', s.events.signup);
+  setValue('events.lead', s.events.lead);
   setValue('windowDays', s.windowDays);
   setValue('cacheSeconds', s.cacheSeconds);
 
@@ -159,6 +160,7 @@ function collect() {
     events: {
       activation: get('events.activation'),
       signup: get('events.signup'),
+      lead: get('events.lead'),
     },
     windowDays: Number(get('windowDays')) || 30,
     cacheSeconds: Number(get('cacheSeconds')) || 0,
