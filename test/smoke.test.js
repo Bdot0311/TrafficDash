@@ -696,3 +696,167 @@ test('enrichment refuses to run without a key rather than failing per row', asyn
   assert.equal(result.ok, false);
   assert.match(result.error, /API key/);
 });
+
+test('a documented batch response is parsed into real contacts', async () => {
+  const { enrichPeople } = await import('../src/enrich.js');
+  const { clearContacts, readContacts } = await import('../src/contacts.js');
+  const crypto = await import('node:crypto');
+  clearContacts();
+
+  const md5 = (v) => crypto.createHash('md5').update(v).digest('hex');
+  const aliceHash = md5('alice@acme.com');
+
+  const originalFetch = globalThis.fetch;
+  let sentBody = null;
+  let sentHeaders = null;
+
+  globalThis.fetch = async (_url, init) => {
+    sentBody = JSON.parse(init.body);
+    sentHeaders = init.headers;
+    // Exactly the shape in the OpenAPI spec — nested under `result`/`results`,
+    // with the real field names. The previous client looked for `profile`,
+    // `company_name` and `business_email`, so it parsed none of this while
+    // still being billed for it.
+    return {
+      ok: true,
+      status: 200,
+      text: async () =>
+        JSON.stringify({
+          results: [
+            {
+              md5: aliceHash,
+              first_name: 'Alice',
+              last_name: 'Smith',
+              title: 'VP of Marketing',
+              seniority: 'vp',
+              current_company: 'Acme',
+              current_industry: 'Computer Software',
+              linkedinurl: 'https://www.linkedin.com/in/alice-123',
+              current_company_url: 'https://acme.com',
+              company_employee_range: '51-200',
+              company_revenue_range: '$10M-$50M',
+              work_email_confirmed: 'alice@acme.com',
+              maid: [{ device_id: 'abc', device_type: 'idfa' }],
+            },
+          ],
+          match_count: 1,
+          credits_charged: 4,
+          credits_exhausted: false,
+        }),
+    };
+  };
+
+  try {
+    writeSettings({ rb2b: { apiKey: 'test-key', maxPerRun: 10 } });
+
+    const result = await enrichPeople([
+      { id: 'p1', email: 'alice@acme.com', contact: null },
+      { id: 'p2', email: 'nobody@example.com', contact: null },
+    ]);
+
+    // Batch mode: one request for the whole selection, not one per person.
+    assert.ok(Array.isArray(sentBody.md5s));
+    assert.equal(sentBody.md5s.length, 2);
+    assert.equal(sentHeaders['X-Api-Key'], 'test-key');
+
+    assert.equal(result.matched, 1);
+    assert.equal(result.misses, 1);
+    // Reported by the API, not inferred — a record can cost more than 1.
+    assert.equal(result.creditsCharged, 4);
+
+    const stored = readContacts();
+    const alice = stored.find((c) => c.sourceKey === 'p1');
+    assert.equal(alice.name, 'Alice Smith');
+    assert.equal(alice.company, 'Acme');
+    assert.equal(alice.title, 'VP of Marketing');
+    assert.equal(alice.email, 'alice@acme.com');
+    assert.equal(alice.linkedin, 'https://www.linkedin.com/in/alice-123');
+
+    // The unmatched person is recorded as a miss so the next run skips them.
+    assert.equal(stored.find((c) => c.sourceKey === 'p2').miss, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+    clearContacts();
+    writeSettings({ rb2b: { apiKey: '', maxPerRun: 25 } });
+  }
+});
+
+test('running out of credits mid-run never marks unprocessed people as tried', async () => {
+  const { enrichPeople } = await import('../src/enrich.js');
+  const { clearContacts, readContacts } = await import('../src/contacts.js');
+  clearContacts();
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    text: async () =>
+      JSON.stringify({
+        results: [],
+        match_count: 0,
+        credits_charged: 0,
+        credits_exhausted: true,
+      }),
+  });
+
+  try {
+    writeSettings({ rb2b: { apiKey: 'test-key', maxPerRun: 10 } });
+
+    const result = await enrichPeople([
+      { id: 'p1', email: 'a@example.com', contact: null },
+      { id: 'p2', email: 'b@example.com', contact: null },
+    ]);
+
+    assert.match(result.stoppedBecause, /exhausted/i);
+    // The critical part: nobody is recorded as tried. We cannot tell which
+    // hashes were processed before the credits ran out, and marking the rest
+    // would permanently skip people nobody ever paid to look up.
+    assert.equal(readContacts().length, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+    clearContacts();
+    writeSettings({ rb2b: { apiKey: '', maxPerRun: 25 } });
+  }
+});
+
+test('a 404 probe counts as a working key, since a miss is the documented answer', async () => {
+  const { testRb2b } = await import('../src/enrich.js');
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async () => ({
+    ok: false,
+    status: 404,
+    text: async () => JSON.stringify({ result: {} }),
+  });
+
+  try {
+    writeSettings({ rb2b: { apiKey: 'test-key' } });
+    const result = await testRb2b();
+    assert.equal(result.ok, true);
+    assert.match(result.detail, /enabled/);
+  } finally {
+    globalThis.fetch = originalFetch;
+    writeSettings({ rb2b: { apiKey: '' } });
+  }
+});
+
+test('403 is reported as a missing entitlement, not a bad key', async () => {
+  const { testRb2b } = await import('../src/enrich.js');
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async () => ({
+    ok: false,
+    status: 403,
+    text: async () => JSON.stringify({ error: 'service_unavailable_for_key' }),
+  });
+
+  try {
+    writeSettings({ rb2b: { apiKey: 'test-key' } });
+    const result = await testRb2b();
+    assert.equal(result.ok, false);
+    assert.match(result.error, /granted separately/);
+  } finally {
+    globalThis.fetch = originalFetch;
+    writeSettings({ rb2b: { apiKey: '' } });
+  }
+});

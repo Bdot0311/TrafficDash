@@ -1122,7 +1122,14 @@ $('#enrich-people').addEventListener('click', async () => {
   const capped = preview.eligible > preview.willAttempt;
   const proceed = window.confirm(
     `Look up ${preview.willAttempt} ${preview.willAttempt === 1 ? 'person' : 'people'}?\n\n` +
-      `Costs up to ${preview.willAttempt} credits — one per successful match.\n` +
+      // A record can cost more than one credit when both the profile and the
+      // device data resolve, so this says "at least", not "up to".
+      `${preview.billableRecords} billable ${preview.billableRecords === 1 ? 'record' : 'records'} — ` +
+      `at least ${preview.billableRecords} credits, more where a lookup returns both ` +
+      `profile and device data. Misses cost nothing.\n` +
+      (preview.billableRecords < preview.willAttempt
+        ? `(${preview.willAttempt - preview.billableRecords} share an address with someone else, so they collapse into one lookup.)\n`
+        : '') +
       (capped ? `${preview.eligible} are eligible; the rest need another run.\n` : '') +
       (preview.skippedNoEmail
         ? `${preview.skippedNoEmail} skipped: no email to look up.\n`
@@ -1151,7 +1158,10 @@ $('#enrich-people').addEventListener('click', async () => {
       flash('#enrich-people', result.error || 'failed');
       return;
     }
-    flash('#enrich-people', `${result.matched} matched`);
+    flash(
+      '#enrich-people',
+      `${result.matched} matched · ${result.creditsCharged} credits`,
+    );
     // Running out of credits mid-run is worth interrupting for — the remaining
     // rows are untouched and the next run resumes from there.
     if (result.stoppedBecause) window.alert(result.stoppedBecause);
