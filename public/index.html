@@ -106,6 +106,37 @@
         <div class="cards" id="cards"></div>
       </section>
 
+      <!-- Opened by the untagged-traffic finding: the only fix is future links. -->
+      <section class="panel utm-builder" id="utm-builder" hidden>
+        <h2 class="panel-title">Tag a link</h2>
+        <p class="help">
+          Paste where you're sending people, name the source, and post the tagged version
+          instead. Anything you post untagged lands in Direct permanently.
+        </p>
+        <div class="utm-grid">
+          <label class="field">
+            <span class="field-label">Destination</span>
+            <input id="utm-url" class="people-input" placeholder="outreign.com/pricing" />
+          </label>
+          <label class="field">
+            <span class="field-label">utm_source</span>
+            <input id="utm-src" class="people-input" placeholder="linkedin" />
+          </label>
+          <label class="field">
+            <span class="field-label">utm_medium</span>
+            <input id="utm-med" class="people-input" placeholder="social" />
+          </label>
+          <label class="field">
+            <span class="field-label">utm_campaign</span>
+            <input id="utm-camp" class="people-input" placeholder="launch" />
+          </label>
+        </div>
+        <div class="utm-out-row">
+          <input id="utm-out" class="people-input" readonly placeholder="Your tagged link appears here" />
+          <button type="button" class="ghost-btn" id="utm-copy" disabled>Copy</button>
+        </div>
+      </section>
+
       <!-- Who to contact next, ordered by that rather than by volume. -->
       <section class="panel" id="pipeline-panel" aria-labelledby="pipeline-title" hidden>
         <div class="panel-head">
@@ -133,6 +164,7 @@
             <button type="button" class="ghost-btn" id="people-paid" aria-pressed="false">
               Paid
             </button>
+            <button type="button" class="ghost-btn" id="people-clear" hidden>Clear filters</button>
             <button type="button" class="ghost-btn" id="copy-emails">Copy emails</button>
             <button type="button" class="ghost-btn" id="export-csv">Export CSV</button>
           </div>

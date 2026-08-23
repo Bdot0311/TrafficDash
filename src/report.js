@@ -166,7 +166,20 @@ function classifyForPipeline(row, now = Date.now()) {
  * showing its arithmetic is just an opinion with a chart behind it. Findings
  * are ordered by how much they should change what you do next, not by how
  * alarming they sound.
+ *
+ * Each also carries an `action`: the list it is about, or the place it gets
+ * fixed. A finding you cannot act on from where you are reading it is a
+ * complaint, not a finding.
  */
+// Who "stopped here" means, per stage. Each names the people who reached the
+// previous stage and went no further.
+const DROP_FILTERS = {
+  scanners: { activated: 'no' },
+  signups: { activated: 'yes', signed: 'no' },
+  checkout: { signed: 'yes', paid: 'no' },
+  paid: { signed: 'yes', paid: 'no' },
+};
+
 function deriveFindings({ sources, totals, revenue, settings }) {
   const out = [];
   const pct = (n, d) => (d > 0 ? Math.round((n / d) * 100) : 0);
@@ -181,6 +194,8 @@ function deriveFindings({ sources, totals, revenue, settings }) {
       level: share >= 50 ? 'critical' : 'warning',
       title: `${share}% of visitors cannot be attributed`,
       detail: `${direct.counts.visitors} of ${visitors} arrived with no UTM and no referrer, so they are indistinguishable from someone typing the URL. Mobile clients strip referrers — tagging links with ?utm_source= is the only thing that recovers this, and only for links posted from now on.`,
+      // Nothing to filter here: the fix is every link you post from now on.
+      action: { kind: 'utm', label: 'Build a tagged link' },
     });
   }
 
@@ -203,6 +218,11 @@ function deriveFindings({ sources, totals, revenue, settings }) {
       level: worst.to === 'paid' || worst.to === 'checkout' ? 'critical' : 'warning',
       title: `Biggest drop: ${worst.from} → ${worst.to}`,
       detail: `${worst.lost} of ${worst.fromCount} (${worst.lostPct}%) do not make it from ${worst.from} to ${worst.to}. No amount of extra traffic changes this ratio — it is the cheapest place to gain.`,
+      action: {
+        kind: 'filter',
+        label: `See the ${worst.lost} who stopped here`,
+        filter: DROP_FILTERS[worst.to] || {},
+      },
     });
   }
 
@@ -226,6 +246,11 @@ function deriveFindings({ sources, totals, revenue, settings }) {
       level: 'good',
       title: `${best.label} converts best: ${best.rates.signups}% sign up`,
       detail: `${best.counts.signups} of ${best.counts.visitors} visitors. Site-wide the rate is ${pct(totals.signups, visitors)}%. If you can get more of this traffic, it is worth more per visitor than anything else here.`,
+      action: {
+        kind: 'filter',
+        label: `See the ${best.counts.signups} who converted`,
+        filter: { source: best.key, signed: 'yes' },
+      },
     });
   }
 
@@ -235,6 +260,11 @@ function deriveFindings({ sources, totals, revenue, settings }) {
       level: 'warning',
       title: `${s.label} sent ${s.counts.visitors} visitors and zero signups`,
       detail: `${s.sessions} sessions, ${s.views} views, nobody converted. Either the audience is wrong or the landing page (${s.topPage}) does not speak to them.`,
+      action: {
+        kind: 'filter',
+        label: `See these ${s.counts.visitors}`,
+        filter: { source: s.key },
+      },
     });
   }
 
@@ -245,6 +275,11 @@ function deriveFindings({ sources, totals, revenue, settings }) {
       level: 'warning',
       title: `${s.label} averages ${Math.round(perVisitor)} pageviews per visitor`,
       detail: `${s.views} views across ${s.counts.visitors} people. Humans do not browse like that — this is likely crawlers, and counting it as traffic will flatter every rate it touches.`,
+      action: {
+        kind: 'filter',
+        label: `Inspect these ${s.counts.visitors}`,
+        filter: { source: s.key },
+      },
     });
   }
 
@@ -254,6 +289,7 @@ function deriveFindings({ sources, totals, revenue, settings }) {
       level: 'warning',
       title: `${fmtMoney(revenue.unattributed, 'USD')} of revenue has no source`,
       detail: `Out of ${fmtMoney(revenue.collected, 'USD')} collected. Until checkout sends both metadata.user_id and metadata.posthog_distinct_id, this money cannot be credited to whatever produced it.`,
+      action: { kind: 'link', label: 'How to fix the join', href: '/settings' },
     });
   }
 
@@ -263,6 +299,7 @@ function deriveFindings({ sources, totals, revenue, settings }) {
       level: 'critical',
       title: `Nobody fired ${settings.events.activation}`,
       detail: `${visitors} visitors, zero activations. Either the event is not being sent, or the name here does not match what the app captures.`,
+      action: { kind: 'link', label: 'Check the event name', href: '/settings' },
     });
   }
 
