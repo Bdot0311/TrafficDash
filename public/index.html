@@ -165,10 +165,13 @@
               Paid
             </button>
             <button type="button" class="ghost-btn" id="people-clear" hidden>Clear filters</button>
+            <button type="button" class="ghost-btn" id="import-contacts">Import contacts</button>
+            <input type="file" id="contacts-file" accept=".csv,.json,text/csv" hidden />
             <button type="button" class="ghost-btn" id="copy-emails">Copy emails</button>
             <button type="button" class="ghost-btn" id="export-csv">Export CSV</button>
           </div>
         </div>
+        <p class="contacts-note" id="contacts-note"></p>
         <div id="people-wrap" class="table-wrap"></div>
         <p class="people-note" id="people-note"></p>
       </section>

@@ -1,5 +1,6 @@
 import { readSettings } from './settings.js';
 import { classifyTouch, pathOf, slotFor } from './classify.js';
+import { readContacts, contactsByEmail } from './contacts.js';
 
 const STAGES = ['visitors', 'scanners', 'signups', 'checkout', 'paid'];
 
@@ -345,8 +346,11 @@ function deriveFindings({ sources, totals, revenue, settings, rows = [] }) {
  * are different questions, and collapsing them into one number is how
  * attribution dashboards start lying.
  */
-export function buildReport({ people, payments }) {
+export function buildReport({ people, payments, contacts = readContacts() }) {
   const settings = readSettings();
+  // Exact email match only — see src/contacts.js for why nothing fuzzier is
+  // acceptable here.
+  const contactIndex = contactsByEmail(contacts);
   const cards = new Map();
   const cardFor = (source) => {
     if (!cards.has(source.key)) cards.set(source.key, emptyCard(source));
@@ -440,6 +444,7 @@ export function buildReport({ people, payments }) {
       scanRuns: person.activationRuns,
       signedUp: person.signedUp,
       leadCaptured: Boolean(person.leadCaptured),
+      contact: person.email ? contactIndex.get(person.email.toLowerCase()) || null : null,
       paid: personPaid.length > 0,
       orders: personPaid.length,
       revenue: Math.round(personPaid.reduce((sum, o) => sum + o.amount, 0) * 100) / 100,
@@ -571,6 +576,18 @@ export function buildReport({ people, payments }) {
     // here most recently. Capped so a large window cannot blow up the payload.
     people: pipelineRows.slice(0, 1000),
     peopleTotal: pipelineRows.length,
+    contacts: (() => {
+      const matchedEmails = new Set(
+        pipelineRows.filter((r) => r.contact).map((r) => r.email.toLowerCase()),
+      );
+      return {
+        imported: contacts.length,
+        // Named but not addressable — the share of an identity tool's output
+        // that cannot be emailed at all.
+        withEmail: contacts.filter((c) => c.email).length,
+        matched: matchedEmails.size,
+      };
+    })(),
     pipeline: PIPELINE_STAGES.map((stage) => {
       const inStage = pipelineRows.filter((r) => r.stage === stage.key);
       return {

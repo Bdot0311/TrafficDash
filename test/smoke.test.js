@@ -592,3 +592,57 @@ test('a lead event without a signup event is called out as ambiguous', () => {
 
   writeSettings({ events: { activation: 'scan_run', signup: 'signup', lead: '' } });
 });
+
+test('contacts join to people by exact email, never by page and time', async () => {
+  const { saveContacts, clearContacts, parseCsv } = await import('../src/contacts.js');
+  clearContacts();
+
+  // Two RB2B-shaped rows landing on the same page minutes apart: precisely the
+  // case where matching on captured URL plus a time window would swap them.
+  saveContacts(
+    parseCsv(
+      'LinkedIn Url,First Name,Last Name,Title,Company Name,Business Email,Seen At,Captured URL\n' +
+        'https://li/a,Jane,Doe,VP Sales,"Acme, Inc",JANE@acme.com,2026-08-20T10:00:00Z,https://example.com/\n' +
+        'https://li/b,Bob,Stone,Founder,Beta LLC,,2026-08-20T10:04:00Z,https://example.com/\n',
+    ),
+  );
+
+  const report = buildReport({
+    people: [
+      person({ email: 'jane@acme.com', signedUp: true, activationRuns: 1 }),
+      person({ email: 'someone-else@example.org', signedUp: true }),
+      person({}), // anonymous, same landing page
+    ],
+    payments: { orders: [], noUserId: { orders: 0, revenue: 0, currency: 'USD' } },
+  });
+
+  const jane = report.people.find((r) => r.email === 'jane@acme.com');
+  assert.equal(jane.contact.company, 'Acme, Inc'); // quoted comma survived the CSV
+  assert.equal(jane.contact.title, 'VP Sales');
+  assert.equal(jane.contact.name, 'Jane Doe');
+
+  // Nobody else gets a contact — including the anonymous visitor on the same
+  // page at the same time as Bob.
+  assert.equal(report.people.filter((r) => r.contact).length, 1);
+
+  assert.equal(report.contacts.imported, 2);
+  assert.equal(report.contacts.withEmail, 1); // Bob is named but unaddressable
+  assert.equal(report.contacts.matched, 1);
+
+  clearContacts();
+});
+
+test('an email-less contact is kept and counted, not silently dropped', async () => {
+  const { saveContacts, clearContacts, readContacts } = await import('../src/contacts.js');
+  clearContacts();
+
+  saveContacts([{ 'First Name': 'Bob', 'Company Name': 'Beta LLC', 'LinkedIn Url': 'https://li/b' }]);
+  const stored = readContacts();
+
+  // How much of an identity tool's output is unusable is itself the finding.
+  assert.equal(stored.length, 1);
+  assert.equal(stored[0].email, '');
+  assert.equal(stored[0].name, 'Bob');
+
+  clearContacts();
+});
